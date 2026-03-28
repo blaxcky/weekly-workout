@@ -7,11 +7,11 @@ import {
   LinearProgress,
   Divider,
 } from '@mui/material';
-import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import TodayIcon from '@mui/icons-material/Today';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
 import { useExercises, useWeeklyTemplate, useCompletions, useCardioEntries } from '../db/hooks';
-import { getWeekId, formatWeekId, formatWeekRange } from '../utils/week';
+import { getWeekId, formatWeekId, formatWeekRange, getWeekRange, getDateKey, WEEKDAY_SHORT } from '../utils/week';
 
 export default function Stats() {
   const exercises = useExercises();
@@ -34,9 +34,33 @@ export default function Stats() {
     return counts;
   }, [completions]);
 
-  const exerciseKcal = completions.reduce((sum, c) => sum + c.kcal, 0);
-  const cardioKcal = cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
-  const totalKcal = exerciseKcal + cardioKcal;
+  // Daily kcal breakdown (Mo–So)
+  const dailyKcal = useMemo(() => {
+    const { monday } = getWeekRange();
+    const days: { label: string; date: string; kcal: number }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const key = getDateKey(d);
+      const exKcal = completions
+        .filter((c) => getDateKey(new Date(c.completedAt)) === key)
+        .reduce((sum, c) => sum + c.kcal, 0);
+      const cardKcal = cardioEntries
+        .filter((c) => getDateKey(new Date(c.createdAt)) === key)
+        .reduce((sum, c) => sum + c.kcal, 0);
+      days.push({
+        label: WEEKDAY_SHORT[i],
+        date: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`,
+        kcal: exKcal + cardKcal,
+      });
+    }
+    return days;
+  }, [completions, cardioEntries]);
+
+  const weekExerciseKcal = completions.reduce((sum, c) => sum + c.kcal, 0);
+  const weekCardioKcal = cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
+  const weekKcal = weekExerciseKcal + weekCardioKcal;
+  const maxDayKcal = Math.max(...dailyKcal.map((d) => d.kcal), 1);
 
   const totalTarget = template.reduce((sum, t) => sum + t.targetCount, 0);
   const totalCompleted = template.reduce(
@@ -54,20 +78,51 @@ export default function Stats() {
         {formatWeekId(weekId)} • {formatWeekRange()}
       </Typography>
 
-      {/* Total kcal */}
+      {/* Daily kcal breakdown */}
       <Card sx={{ mb: 2 }}>
         <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <LocalFireDepartmentIcon color="error" />
-            <Typography variant="h6" fontWeight={600}>Kalorien diese Woche</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <TodayIcon color="primary" />
+            <Typography variant="h6" fontWeight={600}>Kalorien pro Tag</Typography>
           </Box>
-          <Typography variant="h3" fontWeight={700} color="error.main">{totalKcal} kcal</Typography>
-          <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              Übungen: {exerciseKcal} kcal
+          {dailyKcal.map((day) => {
+            const isToday = day.date === `${String(new Date().getDate()).padStart(2, '0')}.${String(new Date().getMonth() + 1).padStart(2, '0')}.`;
+            return (
+              <Box key={day.label} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <Typography
+                  variant="body2"
+                  sx={{ width: 28, fontWeight: isToday ? 700 : 400, color: isToday ? 'primary.main' : 'text.secondary' }}
+                >
+                  {day.label}
+                </Typography>
+                <Box sx={{ flex: 1 }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(day.kcal / maxDayKcal) * 100}
+                    sx={{ height: 14, borderRadius: 7, bgcolor: 'action.hover' }}
+                    color={isToday ? 'primary' : 'inherit'}
+                  />
+                </Box>
+                <Typography
+                  variant="body2"
+                  sx={{ width: 60, textAlign: 'right', fontWeight: isToday ? 700 : 400 }}
+                >
+                  {day.kcal} kcal
+                </Typography>
+              </Box>
+            );
+          })}
+          <Divider sx={{ my: 1 }} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" fontWeight={600}>Woche gesamt</Typography>
+            <Typography variant="body2" fontWeight={700}>{weekKcal} kcal</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 3, mt: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              Übungen: {weekExerciseKcal} kcal
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Cardio: {cardioKcal} kcal
+            <Typography variant="caption" color="text.secondary">
+              Cardio: {weekCardioKcal} kcal
             </Typography>
           </Box>
         </CardContent>

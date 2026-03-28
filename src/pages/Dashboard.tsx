@@ -18,7 +18,7 @@ import type { Exercise } from '../db/database';
 import ExerciseCard from '../components/ExerciseCard';
 import CompletionDialog from '../components/CompletionDialog';
 import CardioDialog from '../components/CardioDialog';
-import { getWeekId, formatWeekId, formatWeekRange } from '../utils/week';
+import { getWeekId, formatWeekId, formatWeekRange, getDateKey, getWeekdayIndex } from '../utils/week';
 
 export default function Dashboard() {
   const exercises = useExercises();
@@ -30,6 +30,7 @@ export default function Dashboard() {
   const [cardioOpen, setCardioOpen] = useState(false);
 
   const weekId = getWeekId();
+  const todayKey = getDateKey();
 
   const exerciseMap = useMemo(() => {
     const map = new Map<string, Exercise>();
@@ -45,9 +46,31 @@ export default function Dashboard() {
     return counts;
   }, [completions]);
 
-  const exerciseKcal = completions.reduce((sum, c) => sum + c.kcal, 0);
-  const cardioKcal = cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
-  const totalKcal = exerciseKcal + cardioKcal;
+  // Per-exercise: which weekdays (0=Mo..6=So) it was completed on
+  const completedDaysMap = useMemo(() => {
+    const map = new Map<string, number[]>();
+    completions.forEach((c) => {
+      const dayIndex = getWeekdayIndex(new Date(c.completedAt));
+      const days = map.get(c.exerciseId) ?? [];
+      if (!days.includes(dayIndex)) days.push(dayIndex);
+      map.set(c.exerciseId, days);
+    });
+    return map;
+  }, [completions]);
+
+  // Daily kcal (today)
+  const todayExerciseKcal = completions
+    .filter((c) => getDateKey(new Date(c.completedAt)) === todayKey)
+    .reduce((sum, c) => sum + c.kcal, 0);
+  const todayCardioKcal = cardioEntries
+    .filter((c) => getDateKey(new Date(c.createdAt)) === todayKey)
+    .reduce((sum, c) => sum + c.kcal, 0);
+  const todayKcal = todayExerciseKcal + todayCardioKcal;
+
+  // Weekly kcal
+  const weekExerciseKcal = completions.reduce((sum, c) => sum + c.kcal, 0);
+  const weekCardioKcal = cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
+  const weekKcal = weekExerciseKcal + weekCardioKcal;
 
   const totalTarget = template.reduce((sum, t) => sum + t.targetCount, 0);
   const totalCompleted = template.reduce(
@@ -74,20 +97,32 @@ export default function Dashboard() {
 
       {/* Stats Cards */}
       <Box sx={{ display: 'flex', gap: 1.5, mb: 3, overflow: 'auto' }}>
+        {/* Daily kcal - prominent */}
         <Card sx={{ flex: 1, minWidth: 120 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
               <LocalFireDepartmentIcon color="error" fontSize="small" />
-              <Typography variant="caption" color="text.secondary">kcal Woche</Typography>
+              <Typography variant="caption" color="text.secondary">kcal heute</Typography>
             </Box>
-            <Typography variant="h5" fontWeight={700}>{totalKcal}</Typography>
+            <Typography variant="h4" fontWeight={700} color="error.main">{todayKcal}</Typography>
           </CardContent>
         </Card>
+        {/* Weekly kcal */}
         <Card sx={{ flex: 1, minWidth: 120 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+              <LocalFireDepartmentIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary">kcal Woche</Typography>
+            </Box>
+            <Typography variant="h5" fontWeight={700}>{weekKcal}</Typography>
+          </CardContent>
+        </Card>
+        {/* Progress */}
+        <Card sx={{ flex: 1, minWidth: 100 }}>
+          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
               <BarChartIcon color="primary" fontSize="small" />
-              <Typography variant="caption" color="text.secondary">Fortschritt</Typography>
+              <Typography variant="caption" color="text.secondary">Woche</Typography>
             </Box>
             <Typography variant="h5" fontWeight={700}>
               {totalCompleted}/{totalTarget}
@@ -116,6 +151,7 @@ export default function Dashboard() {
               exercise={exercise}
               completed={completionCounts.get(t.exerciseId) ?? 0}
               target={t.targetCount}
+              completedDays={completedDaysMap.get(t.exerciseId) ?? []}
               onComplete={() => handleComplete(exercise)}
             />
           );
@@ -129,17 +165,23 @@ export default function Dashboard() {
           <Typography variant="subtitle2" color="text.secondary" gutterBottom>
             Extra Kalorien
           </Typography>
-          {cardioEntries.map((entry) => (
-            <Box key={entry.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-              <Box>
-                <Typography variant="body2">{entry.description}</Typography>
-                <Chip label={`${entry.kcal} kcal`} size="small" variant="outlined" />
+          {cardioEntries.map((entry) => {
+            const entryDay = new Date(entry.createdAt).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+            return (
+              <Box key={entry.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Box>
+                  <Typography variant="body2">{entry.description}</Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                    <Chip label={`${entry.kcal} kcal`} size="small" variant="outlined" />
+                    <Typography variant="caption" color="text.secondary">{entryDay}</Typography>
+                  </Box>
+                </Box>
+                <IconButton size="small" onClick={() => removeCardioEntry(entry.id)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
               </Box>
-              <IconButton size="small" onClick={() => removeCardioEntry(entry.id)}>
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          ))}
+            );
+          })}
         </Box>
       )}
 
@@ -163,7 +205,7 @@ export default function Dashboard() {
                       {c.band ? ` (${c.band})` : ''}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {new Date(c.completedAt).toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(c.completedAt).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                     </Typography>
                   </Box>
                   <IconButton size="small" onClick={() => removeCompletion(c.id)}>

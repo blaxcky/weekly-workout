@@ -43,3 +43,26 @@ export function formatWeekRange(date: Date = new Date()): string {
   const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
   return `${fmt(monday)} – ${fmt(sunday)}${sunday.getFullYear()}`;
 }
+
+/**
+ * Returns a date key like "2026-03-28" for grouping by day.
+ */
+export function getDateKey(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Returns the weekday index (0=Mo, 6=So) for a given date.
+ */
+export function getWeekdayIndex(date: Date): number {
+  return (date.getDay() + 6) % 7; // JS: 0=So → we want 0=Mo
+}
+
+export const WEEKDAY_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] as const;
+
+/**
+ * Returns today's weekday index (0=Mo, 6=So).
+ */
+export function getTodayWeekdayIndex(): number {
+  return getWeekdayIndex(new Date());
+}
