@@ -43,6 +43,19 @@ export async function setTemplateEntry(exerciseId: string, targetCount: number, 
   return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order, scheduledDays });
 }
 
+export async function addTemplateEntries(exerciseIds: string[], targetCount: number, startOrder: number) {
+  await db.transaction('rw', db.weeklyTemplate, async () => {
+    for (let i = 0; i < exerciseIds.length; i++) {
+      await db.weeklyTemplate.add({
+        id: uuidv4(),
+        exerciseId: exerciseIds[i],
+        targetCount,
+        order: startOrder + i,
+      });
+    }
+  });
+}
+
 export async function updateTemplateScheduledDays(exerciseId: string, scheduledDays?: number[]) {
   const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
   if (existing) {

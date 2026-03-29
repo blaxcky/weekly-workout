@@ -5,9 +5,11 @@ import {
   Card,
   CardContent,
   IconButton,
+  Checkbox,
   TextField,
   List,
   ListItem,
+  ListItemButton,
   ListItemText,
   Dialog,
   DialogTitle,
@@ -15,7 +17,6 @@ import {
   DialogActions,
   Button,
   Fab,
-  MenuItem,
   Chip,
   ToggleButton,
   ToggleButtonGroup,
@@ -27,6 +28,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import {
   useExercises,
   useWeeklyTemplate,
+  addTemplateEntries,
   setTemplateEntry,
   removeTemplateEntry,
   reorderTemplate,
@@ -40,7 +42,7 @@ export default function Template() {
   const exercises = useExercises();
   const template = useWeeklyTemplate();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [selectedExercise, setSelectedExercise] = useState('');
+  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
   const [targetCount, setTargetCount] = useState('3');
 
   const templateExerciseIds = new Set(template.map((t) => t.exerciseId));
@@ -49,13 +51,20 @@ export default function Template() {
   const exerciseMap = new Map<string, Exercise>();
   exercises.forEach((e) => exerciseMap.set(e.id, e));
 
-  const handleAdd = async () => {
-    if (!selectedExercise || !targetCount) return;
-    const maxOrder = template.length > 0 ? Math.max(...template.map((t) => t.order)) + 1 : 0;
-    await setTemplateEntry(selectedExercise, parseInt(targetCount) || 3, maxOrder);
-    setSelectedExercise('');
+  const resetAddDialog = () => {
+    setSelectedExerciseIds([]);
     setTargetCount('3');
     setAddDialogOpen(false);
+  };
+
+  const handleAdd = async () => {
+    if (selectedExerciseIds.length === 0 || !targetCount) return;
+    const maxOrder = template.length > 0 ? Math.max(...template.map((t) => t.order)) + 1 : 0;
+    const orderedSelection = availableExercises
+      .filter((exercise) => selectedExerciseIds.includes(exercise.id))
+      .map((exercise) => exercise.id);
+    await addTemplateEntries(orderedSelection, parseInt(targetCount) || 3, maxOrder);
+    resetAddDialog();
   };
 
   const handleRemove = async (exerciseId: string) => {
@@ -89,6 +98,20 @@ export default function Template() {
 
   const handleClearDays = async (exerciseId: string) => {
     await updateTemplateScheduledDays(exerciseId, undefined);
+  };
+
+  const handleToggleSelection = (exerciseId: string) => {
+    setSelectedExerciseIds((current) => (
+      current.includes(exerciseId)
+        ? current.filter((id) => id !== exerciseId)
+        : [...current, exerciseId]
+    ));
+  };
+
+  const handleToggleSelectAll = () => {
+    setSelectedExerciseIds((current) => (
+      current.length === availableExercises.length ? [] : availableExercises.map((exercise) => exercise.id)
+    ));
   };
 
   return (
@@ -220,23 +243,28 @@ export default function Template() {
       </Fab>
 
       {/* Add Dialog */}
-      <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Übung zur Vorlage hinzufügen</DialogTitle>
+      <Dialog open={addDialogOpen} onClose={resetAddDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Übungen zur Vorlage hinzufügen</DialogTitle>
         <DialogContent>
-          <TextField
-            label="Übung"
-            select
-            value={selectedExercise}
-            onChange={(e) => setSelectedExercise(e.target.value)}
-            fullWidth
-            margin="normal"
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              mt: 1,
+              mb: 1.5,
+            }}
           >
-            {availableExercises.map((ex) => (
-              <MenuItem key={ex.id} value={ex.id}>
-                {ex.name} ({ex.type === 'kraft' ? 'Kraft' : 'Physio'})
-              </MenuItem>
-            ))}
-          </TextField>
+            <Typography variant="body2" color="text.secondary">
+              {selectedExerciseIds.length === 0
+                ? 'Wähle mehrere Übungen für die Wochenvorlage aus.'
+                : `${selectedExerciseIds.length} ausgewählt`}
+            </Typography>
+            <Button size="small" onClick={handleToggleSelectAll}>
+              {selectedExerciseIds.length === availableExercises.length ? 'Alle abwählen' : 'Alle auswählen'}
+            </Button>
+          </Box>
           <TextField
             label="Wie oft pro Woche?"
             type="number"
@@ -246,11 +274,53 @@ export default function Template() {
             margin="normal"
             inputProps={{ min: 1, max: 14 }}
           />
+          <List
+            disablePadding
+            sx={{
+              mt: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 3,
+              overflow: 'hidden',
+              bgcolor: 'background.paper',
+            }}
+          >
+            {availableExercises.map((ex, index) => {
+              const selected = selectedExerciseIds.includes(ex.id);
+              return (
+                <ListItem
+                  key={ex.id}
+                  disablePadding
+                  secondaryAction={
+                    <Checkbox
+                      edge="end"
+                      checked={selected}
+                      onChange={() => handleToggleSelection(ex.id)}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  }
+                  sx={{
+                    borderBottom: index < availableExercises.length - 1 ? '1px solid' : 'none',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <ListItemButton onClick={() => handleToggleSelection(ex.id)}>
+                    <ListItemText
+                      primary={ex.name}
+                      secondary={`${ex.type === 'kraft' ? 'Kraft' : 'Physio'} • ${ex.kcalPerCompletion} kcal`}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAddDialogOpen(false)}>Abbrechen</Button>
-          <Button onClick={handleAdd} variant="contained" disabled={!selectedExercise}>
-            Hinzufügen
+          <Button onClick={resetAddDialog}>Abbrechen</Button>
+          <Button onClick={handleAdd} variant="contained" disabled={selectedExerciseIds.length === 0}>
+            {selectedExerciseIds.length <= 1
+              ? 'Hinzufügen'
+              : `${selectedExerciseIds.length} hinzufügen`}
           </Button>
         </DialogActions>
       </Dialog>
