@@ -4,7 +4,7 @@ export interface Exercise {
   id: string;
   name: string;
   type: 'kraft' | 'physio';
-  equipment: 'gewicht' | 'band' | 'koerper';
+  equipment: 'kurzhantel' | 'langhantel' | 'koerpergewicht' | 'theraband' | 'gewicht' | 'band' | 'koerper';
   defaultWeight?: number;
   defaultBand?: string;
   kcalPerCompletion: number;

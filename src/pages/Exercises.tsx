@@ -26,11 +26,18 @@ import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
 import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import { useExercises, addExercise, updateExercise, deleteExercise } from '../db/hooks';
 import type { Exercise } from '../db/database';
+import {
+  EQUIPMENT_OPTIONS,
+  getEquipmentLabel,
+  toEditableEquipment,
+  usesBandInput,
+  usesWeightInput,
+} from '../utils/equipment';
 
 const EMPTY_FORM = {
   name: '',
   type: 'kraft' as Exercise['type'],
-  equipment: 'gewicht' as Exercise['equipment'],
+  equipment: 'kurzhantel' as Exercise['equipment'],
   defaultWeight: '',
   defaultBand: '',
   kcalPerCompletion: '',
@@ -54,7 +61,7 @@ export default function Exercises() {
     setForm({
       name: ex.name,
       type: ex.type,
-      equipment: ex.equipment,
+      equipment: toEditableEquipment(ex.equipment),
       defaultWeight: ex.defaultWeight?.toString() ?? '',
       defaultBand: ex.defaultBand ?? '',
       kcalPerCompletion: ex.kcalPerCompletion.toString(),
@@ -70,8 +77,8 @@ export default function Exercises() {
       name: form.name.trim(),
       type: form.type,
       equipment: form.equipment,
-      defaultWeight: form.equipment === 'gewicht' ? parseFloat(form.defaultWeight) || undefined : undefined,
-      defaultBand: form.equipment === 'band' ? form.defaultBand || undefined : undefined,
+      defaultWeight: usesWeightInput(form.equipment) ? parseFloat(form.defaultWeight) || undefined : undefined,
+      defaultBand: usesBandInput(form.equipment) ? form.defaultBand || undefined : undefined,
       kcalPerCompletion: parseInt(form.kcalPerCompletion) || 0,
       notes: form.notes.trim() || undefined,
     };
@@ -86,12 +93,6 @@ export default function Exercises() {
   const handleDelete = async (id: string) => {
     await deleteExercise(id);
     setDeleteConfirm(null);
-  };
-
-  const equipmentLabel: Record<string, string> = {
-    gewicht: 'Gewicht',
-    band: 'Band',
-    koerper: 'Körper',
   };
 
   return (
@@ -129,12 +130,12 @@ export default function Exercises() {
                     secondary={
                       <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
                         <Chip label={ex.type === 'kraft' ? 'Kraft' : 'Physio'} size="small" variant="outlined" />
-                        <Chip label={equipmentLabel[ex.equipment]} size="small" variant="outlined" />
+                        <Chip label={getEquipmentLabel(ex.equipment)} size="small" variant="outlined" />
                         <Chip label={`${ex.kcalPerCompletion} kcal`} size="small" variant="outlined" />
-                        {ex.equipment === 'gewicht' && ex.defaultWeight && (
+                        {usesWeightInput(ex.equipment) && ex.defaultWeight && (
                           <Chip label={`${ex.defaultWeight} kg`} size="small" color="primary" variant="outlined" />
                         )}
-                        {ex.equipment === 'band' && ex.defaultBand && (
+                        {usesBandInput(ex.equipment) && ex.defaultBand && (
                           <Chip label={ex.defaultBand} size="small" color="secondary" variant="outlined" />
                         )}
                       </Box>
@@ -191,11 +192,13 @@ export default function Exercises() {
             fullWidth
             margin="normal"
           >
-            <MenuItem value="gewicht">Gewicht (Kurzhantel etc.)</MenuItem>
-            <MenuItem value="band">Widerstandsband</MenuItem>
-            <MenuItem value="koerper">Körpergewicht</MenuItem>
+            {EQUIPMENT_OPTIONS.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
           </TextField>
-          {form.equipment === 'gewicht' && (
+          {usesWeightInput(form.equipment) && (
             <TextField
               label="Standard-Gewicht (kg)"
               type="number"
@@ -206,14 +209,14 @@ export default function Exercises() {
               inputProps={{ step: 0.5, min: 0 }}
             />
           )}
-          {form.equipment === 'band' && (
+          {usesBandInput(form.equipment) && (
             <TextField
-              label="Standard-Band"
+              label="Standard-Theraband"
               value={form.defaultBand}
               onChange={(e) => setForm({ ...form, defaultBand: e.target.value })}
               fullWidth
               margin="normal"
-              placeholder="z.B. rot-mittel"
+              placeholder="z.B. rot, mittel"
             />
           )}
           <TextField

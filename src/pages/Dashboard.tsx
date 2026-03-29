@@ -335,6 +335,7 @@ export default function Dashboard() {
 
       {/* Dialogs */}
       <CompletionDialog
+        key={selectedExercise?.id ?? 'empty'}
         exercise={selectedExercise}
         open={completionOpen}
         onClose={() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -12,6 +12,7 @@ import {
 import type { Exercise } from '../db/database';
 import { completeExercise } from '../db/hooks';
 import { updateExercise } from '../db/hooks';
+import { isBodyweightEquipment, usesBandInput, usesWeightInput } from '../utils/equipment';
 
 interface CompletionDialogProps {
   exercise: Exercise | null;
@@ -20,29 +21,22 @@ interface CompletionDialogProps {
 }
 
 export default function CompletionDialog({ exercise, open, onClose }: CompletionDialogProps) {
-  const [weight, setWeight] = useState<string>('');
-  const [band, setBand] = useState<string>('');
-
-  useEffect(() => {
-    if (exercise) {
-      setWeight(exercise.defaultWeight?.toString() ?? '');
-      setBand(exercise.defaultBand ?? '');
-    }
-  }, [exercise]);
+  const [weight, setWeight] = useState<string>(() => exercise?.defaultWeight?.toString() ?? '');
+  const [band, setBand] = useState<string>(() => exercise?.defaultBand ?? '');
 
   if (!exercise) return null;
 
   const handleComplete = async () => {
-    const w = exercise.equipment === 'gewicht' ? parseFloat(weight) || undefined : undefined;
-    const b = exercise.equipment === 'band' ? band || undefined : undefined;
+    const w = usesWeightInput(exercise.equipment) ? parseFloat(weight) || undefined : undefined;
+    const b = usesBandInput(exercise.equipment) ? band || undefined : undefined;
 
     await completeExercise(exercise.id, exercise.kcalPerCompletion, w, b);
 
     // Update default values
-    if (exercise.equipment === 'gewicht' && w !== exercise.defaultWeight) {
+    if (usesWeightInput(exercise.equipment) && w !== exercise.defaultWeight) {
       await updateExercise(exercise.id, { defaultWeight: w });
     }
-    if (exercise.equipment === 'band' && b !== exercise.defaultBand) {
+    if (usesBandInput(exercise.equipment) && b !== exercise.defaultBand) {
       await updateExercise(exercise.id, { defaultBand: b });
     }
 
@@ -57,7 +51,7 @@ export default function CompletionDialog({ exercise, open, onClose }: Completion
           {exercise.name}
         </Typography>
 
-        {exercise.equipment === 'gewicht' && (
+        {usesWeightInput(exercise.equipment) && (
           <TextField
             label="Gewicht (kg)"
             type="number"
@@ -69,18 +63,18 @@ export default function CompletionDialog({ exercise, open, onClose }: Completion
           />
         )}
 
-        {exercise.equipment === 'band' && (
+        {usesBandInput(exercise.equipment) && (
           <TextField
-            label="Bandwiderstand"
+            label="Theraband"
             value={band}
             onChange={(e) => setBand(e.target.value)}
             fullWidth
             margin="normal"
-            placeholder="z.B. rot-mittel"
+            placeholder="z.B. rot, mittel"
           />
         )}
 
-        {exercise.equipment === 'koerper' && (
+        {isBodyweightEquipment(exercise.equipment) && (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             Körperübung – kein Equipment nötig
           </Typography>

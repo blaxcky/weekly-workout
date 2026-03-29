@@ -12,6 +12,7 @@ import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
 import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import type { Exercise } from '../db/database';
 import { WEEKDAY_SHORT, getTodayWeekdayIndex } from '../utils/week';
+import { getEquipmentLabel, usesBandInput, usesWeightInput } from '../utils/equipment';
 
 interface ExerciseCardProps {
   exercise: Exercise;
@@ -21,12 +22,6 @@ interface ExerciseCardProps {
   completedDays: number[];
   onComplete: () => void;
 }
-
-const equipmentLabel: Record<string, string> = {
-  gewicht: 'Gewicht',
-  band: 'Band',
-  koerper: 'Körper',
-};
 
 export default function ExerciseCard({ exercise, completed, target, completedDays, onComplete }: ExerciseCardProps) {
   const isDone = completed >= target;
@@ -69,11 +64,11 @@ export default function ExerciseCard({ exercise, completed, target, completedDay
           </Box>
 
           <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-            <Chip label={equipmentLabel[exercise.equipment] ?? exercise.equipment} size="small" variant="outlined" />
-            {exercise.equipment === 'gewicht' && exercise.defaultWeight && (
+            <Chip label={getEquipmentLabel(exercise.equipment)} size="small" variant="outlined" />
+            {usesWeightInput(exercise.equipment) && exercise.defaultWeight && (
               <Chip label={`${exercise.defaultWeight} kg`} size="small" color="primary" variant="outlined" />
             )}
-            {exercise.equipment === 'band' && exercise.defaultBand && (
+            {usesBandInput(exercise.equipment) && exercise.defaultBand && (
               <Chip label={exercise.defaultBand} size="small" color="secondary" variant="outlined" />
             )}
             <Chip label={`${exercise.kcalPerCompletion} kcal`} size="small" variant="outlined" />
