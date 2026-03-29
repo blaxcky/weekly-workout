@@ -1,50 +1,84 @@
 import type { WeeklyTemplateEntry, CompletedExercise } from '../db/database';
 import { getWeekdayIndex, getDateKey } from './week';
 
+const AUTO_WEEKDAYS = [0, 1, 2, 3, 4] as const;
+
 /**
  * Compute the scheduled weekday indices (0=Mo..6=So) for a template entry.
  * If `scheduledDays` is manually set, use those.
- * Otherwise, distribute evenly across Mo–Fr (0–4), spilling to Sa/So only when targetCount > 5.
+ * Otherwise, use the provided template-wide auto schedule map.
  */
-export function getScheduledDays(entry: WeeklyTemplateEntry): number[] {
+export function getScheduledDays(
+  entry: WeeklyTemplateEntry,
+  scheduledDaysMap?: Map<string, number[]>,
+): number[] {
   if (entry.scheduledDays && entry.scheduledDays.length > 0) {
     return [...entry.scheduledDays].sort((a, b) => a - b);
   }
-  return computeAutoDays(entry.targetCount, entry.order);
+  if (scheduledDaysMap) {
+    return scheduledDaysMap.get(entry.id) ?? [];
+  }
+  return [...AUTO_WEEKDAYS].slice(0, Math.min(Math.max(entry.targetCount, 0), AUTO_WEEKDAYS.length));
 }
 
 /**
- * Deterministic auto-distribution preferring Mo–Fr.
- * Uses `order` as offset so exercises don't all land on the same days.
+ * Build the effective scheduled days for the full template.
+ * Manual days are respected as-is; auto-planned entries are balanced globally across Mo–Fr.
  */
-function computeAutoDays(targetCount: number, order: number): number[] {
-  if (targetCount <= 0) return [];
-  if (targetCount >= 7) return [0, 1, 2, 3, 4, 5, 6];
+export function buildScheduledDaysMap(template: WeeklyTemplateEntry[]): Map<string, number[]> {
+  const sortedTemplate = [...template].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  const scheduledDaysMap = new Map<string, number[]>();
+  const weekdayLoad = new Map<number, number>(AUTO_WEEKDAYS.map((day) => [day, 0]));
 
-  // For targetCount <= 5, distribute over Mo–Fr (0–4)
-  // For targetCount 6, add one weekend day
-  const poolSize = targetCount <= 5 ? 5 : 7;
-  const pool = targetCount <= 5 ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6];
-
-  const spacing = poolSize / targetCount;
-  const offset = (order * 1.618) % poolSize; // golden ratio offset for good spread
-  const days: Set<number> = new Set();
-
-  for (let i = 0; i < targetCount; i++) {
-    const rawIndex = (offset + i * spacing) % poolSize;
-    const dayIndex = pool[Math.floor(rawIndex)];
-    days.add(dayIndex);
-  }
-
-  // If set is smaller than targetCount due to rounding, fill gaps
-  if (days.size < targetCount) {
-    for (const d of pool) {
-      if (days.size >= targetCount) break;
-      days.add(d);
+  for (const entry of sortedTemplate) {
+    if (!entry.scheduledDays || entry.scheduledDays.length === 0) continue;
+    const manualDays = [...entry.scheduledDays].sort((a, b) => a - b);
+    scheduledDaysMap.set(entry.id, manualDays);
+    for (const day of manualDays) {
+      if (AUTO_WEEKDAYS.includes(day as (typeof AUTO_WEEKDAYS)[number])) {
+        weekdayLoad.set(day, (weekdayLoad.get(day) ?? 0) + 1);
+      }
     }
   }
 
-  return [...days].sort((a, b) => a - b);
+  for (const entry of sortedTemplate) {
+    if (entry.scheduledDays && entry.scheduledDays.length > 0) continue;
+
+    const autoDays = computeBalancedAutoDays(entry.targetCount, weekdayLoad);
+    scheduledDaysMap.set(entry.id, autoDays);
+  }
+
+  return scheduledDaysMap;
+}
+
+function computeBalancedAutoDays(targetCount: number, weekdayLoad: Map<number, number>): number[] {
+  const clampedTarget = Math.min(Math.max(targetCount, 0), AUTO_WEEKDAYS.length);
+  if (clampedTarget === 0) return [];
+  if (clampedTarget === AUTO_WEEKDAYS.length) {
+    for (const day of AUTO_WEEKDAYS) {
+      weekdayLoad.set(day, (weekdayLoad.get(day) ?? 0) + 1);
+    }
+    return [...AUTO_WEEKDAYS];
+  }
+
+  const selectedDays: number[] = [];
+  const usedDays = new Set<number>();
+
+  while (selectedDays.length < clampedTarget) {
+    const nextDay = [...AUTO_WEEKDAYS]
+      .filter((day) => !usedDays.has(day))
+      .sort((a, b) => {
+        const loadDiff = (weekdayLoad.get(a) ?? 0) - (weekdayLoad.get(b) ?? 0);
+        if (loadDiff !== 0) return loadDiff;
+        return a - b;
+      })[0];
+
+    selectedDays.push(nextDay);
+    usedDays.add(nextDay);
+    weekdayLoad.set(nextDay, (weekdayLoad.get(nextDay) ?? 0) + 1);
+  }
+
+  return selectedDays.sort((a, b) => a - b);
 }
 
 /**
@@ -67,6 +101,7 @@ export function categorizeDashboard(
 ): DashboardCategories {
   const todayIndex = getWeekdayIndex(new Date());
   const todayKey = getDateKey();
+  const scheduledDaysMap = buildScheduledDaysMap(template);
 
   // Count completions per exercise this week
   const weekCounts = new Map<string, number>();
@@ -97,7 +132,7 @@ export function categorizeDashboard(
 
   for (const entry of template) {
     const weekCount = weekCounts.get(entry.exerciseId) ?? 0;
-    const scheduledDays = getScheduledDays(entry);
+    const scheduledDays = getScheduledDays(entry, scheduledDaysMap);
     const isCompletedToday = completedTodaySet.has(entry.exerciseId);
     const isWeeklyDone = weekCount >= entry.targetCount;
 
@@ -144,6 +179,8 @@ export function getWeekDayStats(
   template: WeeklyTemplateEntry[],
   completions: CompletedExercise[],
 ): DayStats[] {
+  const scheduledDaysMap = buildScheduledDaysMap(template);
+
   // Count completions per day
   const completedPerDay = new Map<number, number>();
   for (const c of completions) {
@@ -154,7 +191,7 @@ export function getWeekDayStats(
   // Count scheduled per day
   const scheduledPerDay = new Map<number, number>();
   for (const entry of template) {
-    const days = getScheduledDays(entry);
+    const days = getScheduledDays(entry, scheduledDaysMap);
     for (const d of days) {
       scheduledPerDay.set(d, (scheduledPerDay.get(d) ?? 0) + 1);
     }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -36,7 +36,7 @@ import {
 } from '../db/hooks';
 import type { Exercise } from '../db/database';
 import { WEEKDAY_SHORT } from '../utils/week';
-import { getScheduledDays } from '../utils/schedule';
+import { buildScheduledDaysMap, getScheduledDays } from '../utils/schedule';
 
 export default function Template() {
   const exercises = useExercises();
@@ -47,6 +47,7 @@ export default function Template() {
 
   const templateExerciseIds = new Set(template.map((t) => t.exerciseId));
   const availableExercises = exercises.filter((e) => !templateExerciseIds.has(e.id));
+  const scheduledDaysMap = useMemo(() => buildScheduledDaysMap(template), [template]);
 
   const exerciseMap = new Map<string, Exercise>();
   exercises.forEach((e) => exerciseMap.set(e.id, e));
@@ -122,6 +123,9 @@ export default function Template() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Lege fest, welche Übungen du pro Woche machen willst.
       </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Auto verteilt nur auf Mo-Fr. Samstag und Sonntag bleiben als Puffertage frei, außer du planst sie manuell.
+      </Typography>
 
       {template.length === 0 ? (
         <Card sx={{ p: 3, textAlign: 'center' }}>
@@ -195,7 +199,7 @@ export default function Template() {
                         />
                       ) : (
                         <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                          automatisch ({getScheduledDays(entry).map((d) => WEEKDAY_SHORT[d]).join(', ')})
+                          automatisch ({getScheduledDays(entry, scheduledDaysMap).map((d) => WEEKDAY_SHORT[d]).join(', ')})
                         </Typography>
                       )}
                     </Box>
