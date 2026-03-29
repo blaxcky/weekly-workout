@@ -35,12 +35,19 @@ export function useWeeklyTemplate() {
   return useLiveQuery(() => db.weeklyTemplate.orderBy('order').toArray()) ?? [];
 }
 
-export async function setTemplateEntry(exerciseId: string, targetCount: number, order: number) {
+export async function setTemplateEntry(exerciseId: string, targetCount: number, order: number, scheduledDays?: number[]) {
   const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
   if (existing) {
-    return db.weeklyTemplate.update(existing.id, { targetCount, order });
+    return db.weeklyTemplate.update(existing.id, { targetCount, order, scheduledDays });
   }
-  return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order });
+  return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order, scheduledDays });
+}
+
+export async function updateTemplateScheduledDays(exerciseId: string, scheduledDays?: number[]) {
+  const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
+  if (existing) {
+    return db.weeklyTemplate.update(existing.id, { scheduledDays });
+  }
 }
 
 export async function removeTemplateEntry(exerciseId: string) {

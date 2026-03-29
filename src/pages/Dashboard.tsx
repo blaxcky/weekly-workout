@@ -8,17 +8,26 @@ import {
   Chip,
   IconButton,
   Divider,
+  Button,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { useExercises, useWeeklyTemplate, useCompletions, useCardioEntries, removeCompletion, removeCardioEntry } from '../db/hooks';
 import type { Exercise } from '../db/database';
 import ExerciseCard from '../components/ExerciseCard';
 import CompletionDialog from '../components/CompletionDialog';
 import CardioDialog from '../components/CardioDialog';
+import CollapsibleSection from '../components/CollapsibleSection';
+import WeekOverview from '../components/WeekOverview';
 import { getWeekId, formatWeekId, formatWeekRange, getDateKey, getWeekdayIndex } from '../utils/week';
+import { categorizeDashboard, getWeekDayStats } from '../utils/schedule';
 
 export default function Dashboard() {
   const exercises = useExercises();
@@ -28,6 +37,7 @@ export default function Dashboard() {
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
   const [completionOpen, setCompletionOpen] = useState(false);
   const [cardioOpen, setCardioOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   const weekId = getWeekId();
   const todayKey = getDateKey();
@@ -46,7 +56,6 @@ export default function Dashboard() {
     return counts;
   }, [completions]);
 
-  // Per-exercise: which weekdays (0=Mo..6=So) it was completed on
   const completedDaysMap = useMemo(() => {
     const map = new Map<string, number[]>();
     completions.forEach((c) => {
@@ -58,7 +67,19 @@ export default function Dashboard() {
     return map;
   }, [completions]);
 
-  // Daily kcal (today)
+  // Smart categorization
+  const categories = useMemo(
+    () => categorizeDashboard(template, completions),
+    [template, completions],
+  );
+
+  // Week overview stats
+  const dayStats = useMemo(
+    () => getWeekDayStats(template, completions),
+    [template, completions],
+  );
+
+  // Daily kcal
   const todayExerciseKcal = completions
     .filter((c) => getDateKey(new Date(c.completedAt)) === todayKey)
     .reduce((sum, c) => sum + c.kcal, 0);
@@ -68,9 +89,8 @@ export default function Dashboard() {
   const todayKcal = todayExerciseKcal + todayCardioKcal;
 
   // Weekly kcal
-  const weekExerciseKcal = completions.reduce((sum, c) => sum + c.kcal, 0);
-  const weekCardioKcal = cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
-  const weekKcal = weekExerciseKcal + weekCardioKcal;
+  const weekKcal = completions.reduce((sum, c) => sum + c.kcal, 0)
+    + cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
 
   const totalTarget = template.reduce((sum, t) => sum + t.targetCount, 0);
   const totalCompleted = template.reduce(
@@ -81,6 +101,21 @@ export default function Dashboard() {
   const handleComplete = (exercise: Exercise) => {
     setSelectedExercise(exercise);
     setCompletionOpen(true);
+  };
+
+  const renderExerciseCard = (t: (typeof template)[number]) => {
+    const exercise = exerciseMap.get(t.exerciseId);
+    if (!exercise) return null;
+    return (
+      <ExerciseCard
+        key={t.id}
+        exercise={exercise}
+        completed={completionCounts.get(t.exerciseId) ?? 0}
+        target={t.targetCount}
+        completedDays={completedDaysMap.get(t.exerciseId) ?? []}
+        onComplete={() => handleComplete(exercise)}
+      />
+    );
   };
 
   return (
@@ -96,8 +131,7 @@ export default function Dashboard() {
       </Box>
 
       {/* Stats Cards */}
-      <Box sx={{ display: 'flex', gap: 1.5, mb: 3, overflow: 'auto' }}>
-        {/* Daily kcal - prominent */}
+      <Box sx={{ display: 'flex', gap: 1.5, mb: 2, overflow: 'auto' }}>
         <Card sx={{ flex: 1, minWidth: 120 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
@@ -107,7 +141,6 @@ export default function Dashboard() {
             <Typography variant="h4" fontWeight={700} color="error.main">{todayKcal}</Typography>
           </CardContent>
         </Card>
-        {/* Weekly kcal */}
         <Card sx={{ flex: 1, minWidth: 120 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
@@ -117,7 +150,6 @@ export default function Dashboard() {
             <Typography variant="h5" fontWeight={700}>{weekKcal}</Typography>
           </CardContent>
         </Card>
-        {/* Progress */}
         <Card sx={{ flex: 1, minWidth: 100 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
@@ -131,8 +163,11 @@ export default function Dashboard() {
         </Card>
       </Box>
 
-      {/* Exercise List */}
-      {template.length === 0 ? (
+      {/* Week Overview */}
+      {template.length > 0 && <WeekOverview dayStats={dayStats} />}
+
+      {/* Empty State */}
+      {template.length === 0 && (
         <Card sx={{ p: 3, textAlign: 'center' }}>
           <Typography color="text.secondary">
             Noch keine Wochenvorlage erstellt.
@@ -141,22 +176,94 @@ export default function Dashboard() {
             Erstelle zuerst Übungen unter "Übungen" und füge sie dann unter "Vorlage" hinzu.
           </Typography>
         </Card>
-      ) : (
-        template.map((t) => {
-          const exercise = exerciseMap.get(t.exerciseId);
-          if (!exercise) return null;
-          return (
-            <ExerciseCard
-              key={t.id}
-              exercise={exercise}
-              completed={completionCounts.get(t.exerciseId) ?? 0}
-              target={t.targetCount}
-              completedDays={completedDaysMap.get(t.exerciseId) ?? []}
-              onComplete={() => handleComplete(exercise)}
-            />
-          );
-        })
       )}
+
+      {/* Show All Toggle */}
+      {template.length > 0 && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+          <Button
+            size="small"
+            startIcon={showAll ? <VisibilityOffIcon /> : <VisibilityIcon />}
+            onClick={() => setShowAll(!showAll)}
+            sx={{ textTransform: 'none' }}
+          >
+            {showAll ? 'Smart-Ansicht' : 'Alle anzeigen'}
+          </Button>
+        </Box>
+      )}
+
+      {/* === SMART VIEW === */}
+      {template.length > 0 && !showAll && (
+        <>
+          {/* Today's exercises */}
+          {categories.todayTodo.length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                Heute dran
+              </Typography>
+              {categories.todayTodo.map(renderExerciseCard)}
+            </Box>
+          )}
+
+          {/* Nothing to do today message */}
+          {categories.todayTodo.length === 0 && categories.catchUp.length === 0 &&
+            categories.doneToday.length === 0 && categories.weeklyComplete.length < template.length && (
+            <Card sx={{ p: 3, textAlign: 'center', mb: 2 }}>
+              <Typography color="text.secondary">
+                🎉 Heute nichts geplant!
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Genieße den freien Tag oder schau unter "Alle anzeigen" nach offenen Übungen.
+              </Typography>
+            </Card>
+          )}
+
+          {/* All done for the week */}
+          {categories.weeklyComplete.length === template.length && (
+            <Card sx={{ p: 3, textAlign: 'center', mb: 2, border: '2px solid', borderColor: 'success.main' }}>
+              <Typography variant="h6" color="success.main" fontWeight={700}>
+                🏆 Alle Wochenziele erreicht!
+              </Typography>
+            </Card>
+          )}
+
+          {/* Catch-up section */}
+          {categories.catchUp.length > 0 && (
+            <CollapsibleSection
+              title="Aufholen"
+              count={categories.catchUp.length}
+              icon={<CatchingPokemonIcon fontSize="small" color="warning" />}
+            >
+              {categories.catchUp.map(renderExerciseCard)}
+            </CollapsibleSection>
+          )}
+
+          {/* Done today */}
+          {categories.doneToday.length > 0 && (
+            <CollapsibleSection
+              title="Heute erledigt"
+              count={categories.doneToday.length}
+              icon={<CheckCircleOutlineIcon fontSize="small" color="success" />}
+            >
+              {categories.doneToday.map(renderExerciseCard)}
+            </CollapsibleSection>
+          )}
+
+          {/* Weekly complete */}
+          {categories.weeklyComplete.length > 0 && categories.weeklyComplete.length < template.length && (
+            <CollapsibleSection
+              title="Wochenziel erreicht"
+              count={categories.weeklyComplete.length}
+              icon={<EmojiEventsIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
+            >
+              {categories.weeklyComplete.map(renderExerciseCard)}
+            </CollapsibleSection>
+          )}
+        </>
+      )}
+
+      {/* === SHOW ALL VIEW (legacy) === */}
+      {template.length > 0 && showAll && template.map(renderExerciseCard)}
 
       {/* Cardio Entries */}
       {cardioEntries.length > 0 && (

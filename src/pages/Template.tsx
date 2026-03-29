@@ -17,6 +17,8 @@ import {
   Fab,
   MenuItem,
   Chip,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -28,8 +30,11 @@ import {
   setTemplateEntry,
   removeTemplateEntry,
   reorderTemplate,
+  updateTemplateScheduledDays,
 } from '../db/hooks';
 import type { Exercise } from '../db/database';
+import { WEEKDAY_SHORT } from '../utils/week';
+import { getScheduledDays } from '../utils/schedule';
 
 export default function Template() {
   const exercises = useExercises();
@@ -68,8 +73,22 @@ export default function Template() {
   const handleUpdateTarget = async (exerciseId: string, newTarget: number) => {
     const entry = template.find((t) => t.exerciseId === exerciseId);
     if (entry) {
-      await setTemplateEntry(exerciseId, Math.max(1, newTarget), entry.order);
+      await setTemplateEntry(exerciseId, Math.max(1, newTarget), entry.order, entry.scheduledDays);
     }
+  };
+
+  const handleToggleDay = async (exerciseId: string, dayIndex: number) => {
+    const entry = template.find((t) => t.exerciseId === exerciseId);
+    if (!entry) return;
+    const current = entry.scheduledDays ?? [];
+    const updated = current.includes(dayIndex)
+      ? current.filter((d) => d !== dayIndex)
+      : [...current, dayIndex].sort((a, b) => a - b);
+    await updateTemplateScheduledDays(exerciseId, updated.length > 0 ? updated : undefined);
+  };
+
+  const handleClearDays = async (exerciseId: string) => {
+    await updateTemplateScheduledDays(exerciseId, undefined);
   };
 
   return (
@@ -137,6 +156,52 @@ export default function Template() {
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </ListItem>
+                  {/* Day schedule toggles */}
+                  <Box sx={{ mt: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        Tage:
+                      </Typography>
+                      {entry.scheduledDays && entry.scheduledDays.length > 0 ? (
+                        <Chip
+                          label="Auto"
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleClearDays(entry.exerciseId)}
+                          sx={{ fontSize: '0.65rem', height: 20 }}
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                          automatisch ({getScheduledDays(entry).map((d) => WEEKDAY_SHORT[d]).join(', ')})
+                        </Typography>
+                      )}
+                    </Box>
+                    <ToggleButtonGroup
+                      size="small"
+                      value={entry.scheduledDays ?? []}
+                      sx={{ flexWrap: 'wrap', gap: 0.5 }}
+                    >
+                      {WEEKDAY_SHORT.map((day, i) => (
+                        <ToggleButton
+                          key={day}
+                          value={i}
+                          onClick={() => handleToggleDay(entry.exerciseId, i)}
+                          selected={(entry.scheduledDays ?? []).includes(i)}
+                          sx={{
+                            px: 1,
+                            py: 0.25,
+                            fontSize: '0.7rem',
+                            minWidth: 36,
+                            borderRadius: '12px !important',
+                            border: '1px solid !important',
+                            borderColor: 'divider !important',
+                          }}
+                        >
+                          {day}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+                  </Box>
                 </CardContent>
               </Card>
             );
