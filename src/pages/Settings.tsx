@@ -139,18 +139,17 @@ export default function Settings({ darkMode, onToggleDarkMode }: SettingsProps) 
             {/* Cache Reset */}
             <ListItem
               sx={{
-                alignItems: { xs: 'flex-start', sm: 'center' },
+                alignItems: 'flex-start',
                 columnGap: 2,
-                flexWrap: { xs: 'wrap', sm: 'nowrap' },
                 py: 1.5,
               }}
             >
-              <CachedIcon sx={{ mt: { xs: 0.5, sm: 0 } }} color="action" />
+              <CachedIcon sx={{ mt: 0.5 }} color="action" />
               <ListItemText
                 primary="Cache zurücksetzen"
                 secondary="Service Worker & Cache löschen, Daten bleiben erhalten"
                 sx={{
-                  flex: '1 1 220px',
+                  flex: '1 1 auto',
                   minWidth: 0,
                   my: 0,
                 }}
@@ -161,9 +160,9 @@ export default function Settings({ darkMode, onToggleDarkMode }: SettingsProps) 
                 color="warning"
                 onClick={() => setResetDialogOpen(true)}
                 sx={{
-                  alignSelf: { xs: 'flex-start', sm: 'center' },
+                  alignSelf: 'center',
                   flexShrink: 0,
-                  ml: { xs: 6, sm: 0 },
+                  ml: 1,
                 }}
               >
                 Reset
