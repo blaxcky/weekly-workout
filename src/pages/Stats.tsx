@@ -19,6 +19,14 @@ export default function Stats() {
   const completions = useCompletions();
   const cardioEntries = useCardioEntries();
   const weekId = getWeekId();
+  const requiredTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional),
+    [template],
+  );
+  const optionalTemplate = useMemo(
+    () => template.filter((entry) => entry.isOptional),
+    [template],
+  );
 
   const exerciseMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -62,12 +70,47 @@ export default function Stats() {
   const weekKcal = weekExerciseKcal + weekCardioKcal;
   const maxDayKcal = Math.max(...dailyKcal.map((d) => d.kcal), 1);
 
-  const totalTarget = template.reduce((sum, t) => sum + t.targetCount, 0);
-  const totalCompleted = template.reduce(
+  const totalTarget = requiredTemplate.reduce((sum, t) => sum + t.targetCount, 0);
+  const totalCompleted = requiredTemplate.reduce(
     (sum, t) => sum + Math.min(completionCounts.get(t.exerciseId) ?? 0, t.targetCount),
     0,
   );
   const overallProgress = totalTarget > 0 ? (totalCompleted / totalTarget) * 100 : 0;
+
+  const renderExerciseProgressList = (entries: typeof template, title: string) => {
+    if (entries.length === 0) return null;
+
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+          {title}
+        </Typography>
+        {entries.map((t, index) => {
+          const name = exerciseMap.get(t.exerciseId) ?? 'Unbekannt';
+          const done = completionCounts.get(t.exerciseId) ?? 0;
+          const capped = Math.min(done, t.targetCount);
+          const pct = t.targetCount > 0 ? (capped / t.targetCount) * 100 : 0;
+          return (
+            <Box key={t.id} sx={{ mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="body2" fontWeight={600}>{name}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {done}/{t.targetCount}
+                </Typography>
+              </Box>
+              <LinearProgress
+                variant="determinate"
+                value={pct}
+                sx={{ height: 6, borderRadius: 3 }}
+                color={done >= t.targetCount ? 'success' : 'primary'}
+              />
+              {index < entries.length - 1 && <Divider sx={{ mt: 2 }} />}
+            </Box>
+          );
+        })}
+      </Box>
+    );
+  };
 
   return (
     <Box>
@@ -133,7 +176,7 @@ export default function Stats() {
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             <CheckCircleIcon color="success" />
-            <Typography variant="h6" fontWeight={600}>Gesamtfortschritt</Typography>
+            <Typography variant="h6" fontWeight={600}>Pflichtfortschritt</Typography>
           </Box>
           <Typography variant="h3" fontWeight={700} color="success.main">
             {totalCompleted}/{totalTarget}
@@ -157,29 +200,16 @@ export default function Stats() {
           {template.length === 0 ? (
             <Typography color="text.secondary">Keine Vorlage konfiguriert.</Typography>
           ) : (
-            template.map((t) => {
-              const name = exerciseMap.get(t.exerciseId) ?? 'Unbekannt';
-              const done = completionCounts.get(t.exerciseId) ?? 0;
-              const capped = Math.min(done, t.targetCount);
-              const pct = t.targetCount > 0 ? (capped / t.targetCount) * 100 : 0;
-              return (
-                <Box key={t.id} sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="body2" fontWeight={600}>{name}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {done}/{t.targetCount}
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={pct}
-                    sx={{ height: 6, borderRadius: 3 }}
-                    color={done >= t.targetCount ? 'success' : 'primary'}
-                  />
-                  {t !== template[template.length - 1] && <Divider sx={{ mt: 2 }} />}
-                </Box>
-              );
-            })
+            <>
+              {requiredTemplate.length > 0 ? (
+                renderExerciseProgressList(requiredTemplate, 'Pflichtübungen')
+              ) : (
+                <Typography color="text.secondary" sx={{ mb: optionalTemplate.length > 0 ? 2 : 0 }}>
+                  Keine Pflichtübungen konfiguriert.
+                </Typography>
+              )}
+              {renderExerciseProgressList(optionalTemplate, 'Optionale Übungen')}
+            </>
           )}
         </CardContent>
       </Card>

@@ -17,6 +17,7 @@ export interface WeeklyTemplateEntry {
   exerciseId: string;
   targetCount: number;
   order: number;
+  isOptional?: boolean;
   /** Optional: manually assigned weekday indices (0=Mo..4=Fr, 5=Sa, 6=So). If unset, auto-scheduled. */
   scheduledDays?: number[];
 }

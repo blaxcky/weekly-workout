@@ -180,10 +180,12 @@ export function getWeekDayStats(
   completions: CompletedExercise[],
 ): DayStats[] {
   const scheduledDaysMap = buildScheduledDaysMap(template);
+  const templateExerciseIds = new Set(template.map((entry) => entry.exerciseId));
 
   // Count completions per day
   const completedPerDay = new Map<number, number>();
   for (const c of completions) {
+    if (!templateExerciseIds.has(c.exerciseId)) continue;
     const day = getWeekdayIndex(new Date(c.completedAt));
     completedPerDay.set(day, (completedPerDay.get(day) ?? 0) + 1);
   }

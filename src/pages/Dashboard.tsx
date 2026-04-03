@@ -47,6 +47,14 @@ export default function Dashboard() {
     exercises.forEach((e) => map.set(e.id, e));
     return map;
   }, [exercises]);
+  const requiredTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional),
+    [template],
+  );
+  const optionalTemplate = useMemo(
+    () => template.filter((entry) => entry.isOptional),
+    [template],
+  );
 
   const completionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -69,14 +77,14 @@ export default function Dashboard() {
 
   // Smart categorization
   const categories = useMemo(
-    () => categorizeDashboard(template, completions),
-    [template, completions],
+    () => categorizeDashboard(requiredTemplate, completions),
+    [requiredTemplate, completions],
   );
 
   // Week overview stats
   const dayStats = useMemo(
-    () => getWeekDayStats(template, completions),
-    [template, completions],
+    () => getWeekDayStats(requiredTemplate, completions),
+    [requiredTemplate, completions],
   );
 
   // Daily kcal
@@ -92,11 +100,12 @@ export default function Dashboard() {
   const weekKcal = completions.reduce((sum, c) => sum + c.kcal, 0)
     + cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
 
-  const totalTarget = template.reduce((sum, t) => sum + t.targetCount, 0);
-  const totalCompleted = template.reduce(
+  const totalTarget = requiredTemplate.reduce((sum, t) => sum + t.targetCount, 0);
+  const totalCompleted = requiredTemplate.reduce(
     (sum, t) => sum + Math.min(completionCounts.get(t.exerciseId) ?? 0, t.targetCount),
     0,
   );
+  const allRequiredComplete = requiredTemplate.length > 0 && categories.weeklyComplete.length === requiredTemplate.length;
 
   const handleComplete = (exercise: Exercise) => {
     setSelectedExercise(exercise);
@@ -150,6 +159,25 @@ export default function Dashboard() {
     );
   };
 
+  const renderOptionalSection = () => {
+    if (optionalTemplate.length === 0) return null;
+
+    return (
+      <CollapsibleSection
+        title="Optionale Übungen"
+        count={optionalTemplate.length}
+        defaultExpanded={allRequiredComplete || requiredTemplate.length === 0}
+      >
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          {allRequiredComplete || requiredTemplate.length === 0
+            ? 'Pflicht ist erledigt. Wenn du noch Energie hast, kannst du hier weitermachen.'
+            : 'Für später, wenn die Pflichtübungen geschafft sind.'}
+        </Typography>
+        {renderTypedExerciseList(optionalTemplate)}
+      </CollapsibleSection>
+    );
+  };
+
   return (
     <Box>
       {/* Week Header */}
@@ -186,7 +214,7 @@ export default function Dashboard() {
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
               <BarChartIcon color="primary" fontSize="small" />
-              <Typography variant="caption" color="text.secondary">Woche</Typography>
+              <Typography variant="caption" color="text.secondary">Pflicht</Typography>
             </Box>
             <Typography variant="h5" fontWeight={700}>
               {totalCompleted}/{totalTarget}
@@ -196,7 +224,7 @@ export default function Dashboard() {
       </Box>
 
       {/* Week Overview */}
-      {template.length > 0 && <WeekOverview dayStats={dayStats} />}
+      {requiredTemplate.length > 0 && <WeekOverview dayStats={dayStats} />}
 
       {/* Empty State */}
       {template.length === 0 && (
@@ -239,7 +267,8 @@ export default function Dashboard() {
 
           {/* Nothing to do today message */}
           {categories.todayTodo.length === 0 && categories.catchUp.length === 0 &&
-            categories.doneToday.length === 0 && categories.weeklyComplete.length < template.length && (
+            categories.doneToday.length === 0 && categories.weeklyComplete.length < requiredTemplate.length &&
+            requiredTemplate.length > 0 && (
             <Card sx={{ p: 3, textAlign: 'center', mb: 2 }}>
               <Typography color="text.secondary">
                 🎉 Heute nichts geplant!
@@ -251,10 +280,10 @@ export default function Dashboard() {
           )}
 
           {/* All done for the week */}
-          {categories.weeklyComplete.length === template.length && (
+          {allRequiredComplete && (
             <Card sx={{ p: 3, textAlign: 'center', mb: 2, border: '2px solid', borderColor: 'success.main' }}>
               <Typography variant="h6" color="success.main" fontWeight={700}>
-                🏆 Alle Wochenziele erreicht!
+                🏆 Alle Pflichtziele erreicht!
               </Typography>
             </Card>
           )}
@@ -282,7 +311,7 @@ export default function Dashboard() {
           )}
 
           {/* Weekly complete */}
-          {categories.weeklyComplete.length > 0 && categories.weeklyComplete.length < template.length && (
+          {categories.weeklyComplete.length > 0 && categories.weeklyComplete.length < requiredTemplate.length && (
             <CollapsibleSection
               title="Wochenziel erreicht"
               count={categories.weeklyComplete.length}
@@ -291,14 +320,24 @@ export default function Dashboard() {
               {renderTypedExerciseList(categories.weeklyComplete)}
             </CollapsibleSection>
           )}
+
+          {renderOptionalSection()}
         </>
       )}
 
       {/* === SHOW ALL VIEW (legacy) === */}
       {template.length > 0 && showAll && (
-        <Box sx={{ mb: 2 }}>
-          {renderTypedExerciseList(template)}
-        </Box>
+        <>
+          {requiredTemplate.length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                Pflichtübungen
+              </Typography>
+              {renderTypedExerciseList(requiredTemplate)}
+            </Box>
+          )}
+          {renderOptionalSection()}
+        </>
       )}
 
       {/* Cardio Entries */}

@@ -35,15 +35,26 @@ export function useWeeklyTemplate() {
   return useLiveQuery(() => db.weeklyTemplate.orderBy('order').toArray()) ?? [];
 }
 
-export async function setTemplateEntry(exerciseId: string, targetCount: number, order: number, scheduledDays?: number[]) {
+export async function setTemplateEntry(
+  exerciseId: string,
+  targetCount: number,
+  order: number,
+  scheduledDays?: number[],
+  isOptional = false,
+) {
   const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
   if (existing) {
-    return db.weeklyTemplate.update(existing.id, { targetCount, order, scheduledDays });
+    return db.weeklyTemplate.update(existing.id, { targetCount, order, scheduledDays, isOptional });
   }
-  return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order, scheduledDays });
+  return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order, scheduledDays, isOptional });
 }
 
-export async function addTemplateEntries(exerciseIds: string[], targetCount: number, startOrder: number) {
+export async function addTemplateEntries(
+  exerciseIds: string[],
+  targetCount: number,
+  startOrder: number,
+  isOptional = false,
+) {
   await db.transaction('rw', db.weeklyTemplate, async () => {
     for (let i = 0; i < exerciseIds.length; i++) {
       await db.weeklyTemplate.add({
@@ -51,6 +62,7 @@ export async function addTemplateEntries(exerciseIds: string[], targetCount: num
         exerciseId: exerciseIds[i],
         targetCount,
         order: startOrder + i,
+        isOptional,
       });
     }
   });
@@ -60,6 +72,13 @@ export async function updateTemplateScheduledDays(exerciseId: string, scheduledD
   const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
   if (existing) {
     return db.weeklyTemplate.update(existing.id, { scheduledDays });
+  }
+}
+
+export async function updateTemplateOptional(exerciseId: string, isOptional: boolean) {
+  const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
+  if (existing) {
+    return db.weeklyTemplate.update(existing.id, { isOptional });
   }
 }
 

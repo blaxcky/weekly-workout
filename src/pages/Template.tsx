@@ -33,6 +33,7 @@ import {
   removeTemplateEntry,
   reorderTemplate,
   updateTemplateScheduledDays,
+  updateTemplateOptional,
 } from '../db/hooks';
 import type { Exercise } from '../db/database';
 import { WEEKDAY_SHORT } from '../utils/week';
@@ -45,10 +46,26 @@ export default function Template() {
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
   const [targetCount, setTargetCount] = useState('3');
   const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>({});
+  const [newEntryKind, setNewEntryKind] = useState<'required' | 'optional'>('required');
 
   const templateExerciseIds = new Set(template.map((t) => t.exerciseId));
   const availableExercises = exercises.filter((e) => !templateExerciseIds.has(e.id));
-  const scheduledDaysMap = useMemo(() => buildScheduledDaysMap(template), [template]);
+  const requiredTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional),
+    [template],
+  );
+  const optionalTemplate = useMemo(
+    () => template.filter((entry) => entry.isOptional),
+    [template],
+  );
+  const requiredScheduledDaysMap = useMemo(
+    () => buildScheduledDaysMap(requiredTemplate),
+    [requiredTemplate],
+  );
+  const optionalScheduledDaysMap = useMemo(
+    () => buildScheduledDaysMap(optionalTemplate),
+    [optionalTemplate],
+  );
 
   const exerciseMap = new Map<string, Exercise>();
   exercises.forEach((e) => exerciseMap.set(e.id, e));
@@ -56,6 +73,7 @@ export default function Template() {
   const resetAddDialog = () => {
     setSelectedExerciseIds([]);
     setTargetCount('3');
+    setNewEntryKind('required');
     setAddDialogOpen(false);
   };
 
@@ -65,7 +83,12 @@ export default function Template() {
     const orderedSelection = availableExercises
       .filter((exercise) => selectedExerciseIds.includes(exercise.id))
       .map((exercise) => exercise.id);
-    await addTemplateEntries(orderedSelection, parseInt(targetCount) || 3, maxOrder);
+    await addTemplateEntries(
+      orderedSelection,
+      parseInt(targetCount) || 3,
+      maxOrder,
+      newEntryKind === 'optional',
+    );
     resetAddDialog();
   };
 
@@ -84,7 +107,13 @@ export default function Template() {
   const handleUpdateTarget = async (exerciseId: string, newTarget: number) => {
     const entry = template.find((t) => t.exerciseId === exerciseId);
     if (entry) {
-      await setTemplateEntry(exerciseId, Math.max(1, newTarget), entry.order, entry.scheduledDays);
+      await setTemplateEntry(
+        exerciseId,
+        Math.max(1, newTarget),
+        entry.order,
+        entry.scheduledDays,
+        entry.isOptional ?? false,
+      );
     }
   };
 
@@ -128,6 +157,11 @@ export default function Template() {
 
   const handleClearDays = async (exerciseId: string) => {
     await updateTemplateScheduledDays(exerciseId, undefined);
+  };
+
+  const handleUpdateOptional = async (exerciseId: string, nextKind: 'required' | 'optional' | null) => {
+    if (!nextKind) return;
+    await updateTemplateOptional(exerciseId, nextKind === 'optional');
   };
 
   const handleToggleSelection = (exerciseId: string) => {
@@ -187,6 +221,12 @@ export default function Template() {
                       secondary={
                         <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
                           <Chip label={ex.type === 'kraft' ? 'Kraft' : 'Physio'} size="small" variant="outlined" />
+                          <Chip
+                            label={entry.isOptional ? 'Optional' : 'Pflicht'}
+                            size="small"
+                            color={entry.isOptional ? 'default' : 'success'}
+                            variant={entry.isOptional ? 'outlined' : 'filled'}
+                          />
                           <Chip label={`${ex.kcalPerCompletion} kcal`} size="small" variant="outlined" />
                           <TextField
                             type="number"
@@ -223,6 +263,19 @@ export default function Template() {
                   </ListItem>
                   {/* Day schedule toggles */}
                   <Box sx={{ mt: 1.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+                      <ToggleButtonGroup
+                        size="small"
+                        exclusive
+                        value={entry.isOptional ? 'optional' : 'required'}
+                        onChange={(_, value: 'required' | 'optional' | null) => {
+                          void handleUpdateOptional(entry.exerciseId, value);
+                        }}
+                      >
+                        <ToggleButton value="required">Pflicht</ToggleButton>
+                        <ToggleButton value="optional">Optional</ToggleButton>
+                      </ToggleButtonGroup>
+                    </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                       <Typography variant="caption" color="text.secondary">
                         Tage:
@@ -237,7 +290,10 @@ export default function Template() {
                         />
                       ) : (
                         <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                          automatisch ({getScheduledDays(entry, scheduledDaysMap).map((d) => WEEKDAY_SHORT[d]).join(', ')})
+                          automatisch ({getScheduledDays(
+                            entry,
+                            entry.isOptional ? optionalScheduledDaysMap : requiredScheduledDaysMap,
+                          ).map((d) => WEEKDAY_SHORT[d]).join(', ')})
                         </Typography>
                       )}
                     </Box>
@@ -316,6 +372,22 @@ export default function Template() {
             margin="normal"
             inputProps={{ min: 1, max: 14 }}
           />
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+              Kategorie
+            </Typography>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={newEntryKind}
+              onChange={(_, value: 'required' | 'optional' | null) => {
+                if (value) setNewEntryKind(value);
+              }}
+            >
+              <ToggleButton value="required">Pflicht</ToggleButton>
+              <ToggleButton value="optional">Optional</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
           <List
             disablePadding
             sx={{
