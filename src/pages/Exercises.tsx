@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -46,6 +46,14 @@ const EMPTY_FORM = {
 
 export default function Exercises() {
   const exercises = useExercises();
+  const physioExercises = useMemo(
+    () => exercises.filter((exercise) => exercise.type === 'physio'),
+    [exercises],
+  );
+  const strengthExercises = useMemo(
+    () => exercises.filter((exercise) => exercise.type === 'kraft'),
+    [exercises],
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -95,24 +103,16 @@ export default function Exercises() {
     setDeleteConfirm(null);
   };
 
-  return (
-    <Box>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        Übungen
-      </Typography>
+  const renderExerciseSection = (title: string, entries: Exercise[]) => {
+    if (entries.length === 0) return null;
 
-      {exercises.length === 0 ? (
-        <Card sx={{ p: 3, textAlign: 'center' }}>
-          <Typography color="text.secondary">
-            Noch keine Übungen erstellt.
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Tippe auf + um eine Übung hinzuzufügen.
-          </Typography>
-        </Card>
-      ) : (
+    return (
+      <Box sx={{ mb: 2.5 }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+          {title}
+        </Typography>
         <List disablePadding>
-          {exercises.map((ex) => (
+          {entries.map((ex) => (
             <Card key={ex.id} sx={{ mb: 1.5 }}>
               <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                 <ListItem disablePadding>
@@ -154,6 +154,30 @@ export default function Exercises() {
             </Card>
           ))}
         </List>
+      </Box>
+    );
+  };
+
+  return (
+    <Box>
+      <Typography variant="h5" fontWeight={700} gutterBottom>
+        Übungen
+      </Typography>
+
+      {exercises.length === 0 ? (
+        <Card sx={{ p: 3, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Noch keine Übungen erstellt.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Tippe auf + um eine Übung hinzuzufügen.
+          </Typography>
+        </Card>
+      ) : (
+        <>
+          {renderExerciseSection('Physio', physioExercises)}
+          {renderExerciseSection('Kraft', strengthExercises)}
+        </>
       )}
 
       {/* Create FAB */}

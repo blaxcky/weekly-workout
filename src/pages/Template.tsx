@@ -97,11 +97,20 @@ export default function Template() {
   };
 
   const handleMove = async (index: number, direction: 'up' | 'down') => {
-    const newTemplate = [...template];
-    const swapIndex = direction === 'up' ? index - 1 : index + 1;
-    if (swapIndex < 0 || swapIndex >= newTemplate.length) return;
-    [newTemplate[index], newTemplate[swapIndex]] = [newTemplate[swapIndex], newTemplate[index]];
-    await reorderTemplate(newTemplate);
+    const entry = template[index];
+    if (!entry) return;
+
+    const currentGroup = entry.isOptional ? [...optionalTemplate] : [...requiredTemplate];
+    const otherGroup = entry.isOptional ? requiredTemplate : optionalTemplate;
+    const groupIndex = currentGroup.findIndex((item) => item.id === entry.id);
+    const swapIndex = direction === 'up' ? groupIndex - 1 : groupIndex + 1;
+    if (groupIndex < 0 || swapIndex < 0 || swapIndex >= currentGroup.length) return;
+
+    [currentGroup[groupIndex], currentGroup[swapIndex]] = [currentGroup[swapIndex], currentGroup[groupIndex]];
+    const reorderedTemplate = entry.isOptional
+      ? [...otherGroup, ...currentGroup]
+      : [...currentGroup, ...otherGroup];
+    await reorderTemplate(reorderedTemplate);
   };
 
   const handleUpdateTarget = async (exerciseId: string, newTarget: number) => {
@@ -161,7 +170,22 @@ export default function Template() {
 
   const handleUpdateOptional = async (exerciseId: string, nextKind: 'required' | 'optional' | null) => {
     if (!nextKind) return;
-    await updateTemplateOptional(exerciseId, nextKind === 'optional');
+    const entry = template.find((item) => item.exerciseId === exerciseId);
+    if (!entry) return;
+
+    const nextIsOptional = nextKind === 'optional';
+    if ((entry.isOptional ?? false) === nextIsOptional) return;
+
+    const updatedEntry = { ...entry, isOptional: nextIsOptional };
+    const nextRequired = nextIsOptional
+      ? requiredTemplate.filter((item) => item.id !== entry.id)
+      : [...requiredTemplate, updatedEntry];
+    const nextOptional = nextIsOptional
+      ? [...optionalTemplate, updatedEntry]
+      : optionalTemplate.filter((item) => item.id !== entry.id);
+
+    await updateTemplateOptional(exerciseId, nextIsOptional);
+    await reorderTemplate([...nextRequired, ...nextOptional]);
   };
 
   const handleToggleSelection = (exerciseId: string) => {
@@ -178,36 +202,16 @@ export default function Template() {
     ));
   };
 
-  return (
-    <Box>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        Wochenvorlage
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Lege fest, welche Übungen du pro Woche machen willst.
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-        Auto verteilt nur auf Mo-Fr. Samstag und Sonntag bleiben als Puffertage frei, außer du planst sie manuell.
-      </Typography>
+  const renderTemplateSection = (title: string, entries: typeof template) => {
+    if (entries.length === 0) return null;
 
-      {template.length === 0 ? (
-        <Card sx={{ p: 3, textAlign: 'center' }}>
-          <Typography color="text.secondary">
-            Noch keine Übungen in der Vorlage.
-          </Typography>
-          {exercises.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Erstelle zuerst Übungen unter "Übungen".
-            </Typography>
-          ) : (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Tippe auf + um Übungen hinzuzufügen.
-            </Typography>
-          )}
-        </Card>
-      ) : (
+    return (
+      <Box sx={{ mb: 2.5 }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+          {title}
+        </Typography>
         <List disablePadding>
-          {template.map((entry, index) => {
+          {entries.map((entry, index) => {
             const ex = exerciseMap.get(entry.exerciseId);
             if (!ex) return null;
             return (
@@ -250,10 +254,10 @@ export default function Template() {
                       }
                     />
                     <Box sx={{ display: 'flex', flexDirection: 'column', ml: 1 }}>
-                      <IconButton size="small" onClick={() => handleMove(index, 'up')} disabled={index === 0}>
+                      <IconButton size="small" onClick={() => handleMove(template.findIndex((item) => item.id === entry.id), 'up')} disabled={index === 0}>
                         <ArrowUpwardIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" onClick={() => handleMove(index, 'down')} disabled={index === template.length - 1}>
+                      <IconButton size="small" onClick={() => handleMove(template.findIndex((item) => item.id === entry.id), 'down')} disabled={index === entries.length - 1}>
                         <ArrowDownwardIcon fontSize="small" />
                       </IconButton>
                     </Box>
@@ -261,7 +265,6 @@ export default function Template() {
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </ListItem>
-                  {/* Day schedule toggles */}
                   <Box sx={{ mt: 1.5 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
                       <ToggleButtonGroup
@@ -328,6 +331,42 @@ export default function Template() {
             );
           })}
         </List>
+      </Box>
+    );
+  };
+
+  return (
+    <Box>
+      <Typography variant="h5" fontWeight={700} gutterBottom>
+        Wochenvorlage
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Lege fest, welche Übungen du pro Woche machen willst.
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Auto verteilt nur auf Mo-Fr. Samstag und Sonntag bleiben als Puffertage frei, außer du planst sie manuell.
+      </Typography>
+
+      {template.length === 0 ? (
+        <Card sx={{ p: 3, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Noch keine Übungen in der Vorlage.
+          </Typography>
+          {exercises.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Erstelle zuerst Übungen unter "Übungen".
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Tippe auf + um Übungen hinzuzufügen.
+            </Typography>
+          )}
+        </Card>
+      ) : (
+        <>
+          {renderTemplateSection('Pflichtübungen', requiredTemplate)}
+          {renderTemplateSection('Optionale Übungen', optionalTemplate)}
+        </>
       )}
 
       {/* Add FAB */}
