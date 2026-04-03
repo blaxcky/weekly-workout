@@ -44,6 +44,7 @@ export default function Template() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
   const [targetCount, setTargetCount] = useState('3');
+  const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>({});
 
   const templateExerciseIds = new Set(template.map((t) => t.exerciseId));
   const availableExercises = exercises.filter((e) => !templateExerciseIds.has(e.id));
@@ -84,6 +85,34 @@ export default function Template() {
     const entry = template.find((t) => t.exerciseId === exerciseId);
     if (entry) {
       await setTemplateEntry(exerciseId, Math.max(1, newTarget), entry.order, entry.scheduledDays);
+    }
+  };
+
+  const handleTargetDraftChange = (exerciseId: string, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    setTargetDrafts((current) => ({
+      ...current,
+      [exerciseId]: value,
+    }));
+  };
+
+  const commitTargetDraft = async (exerciseId: string) => {
+    const entry = template.find((t) => t.exerciseId === exerciseId);
+    if (!entry) return;
+
+    const draftValue = targetDrafts[exerciseId];
+    if (draftValue === undefined) return;
+
+    const nextTarget = Math.max(1, parseInt(draftValue, 10) || 1);
+
+    setTargetDrafts((current) => {
+      const nextDrafts = { ...current };
+      delete nextDrafts[exerciseId];
+      return nextDrafts;
+    });
+
+    if (nextTarget !== entry.targetCount) {
+      await handleUpdateTarget(exerciseId, nextTarget);
     }
   };
 
@@ -161,8 +190,17 @@ export default function Template() {
                           <Chip label={`${ex.kcalPerCompletion} kcal`} size="small" variant="outlined" />
                           <TextField
                             type="number"
-                            value={entry.targetCount}
-                            onChange={(e) => handleUpdateTarget(entry.exerciseId, parseInt(e.target.value) || 1)}
+                            value={targetDrafts[entry.exerciseId] ?? entry.targetCount.toString()}
+                            onChange={(e) => handleTargetDraftChange(entry.exerciseId, e.target.value)}
+                            onBlur={() => {
+                              void commitTargetDraft(entry.exerciseId);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                void commitTargetDraft(entry.exerciseId);
+                              }
+                            }}
                             size="small"
                             label="x/Woche"
                             sx={{ width: 90 }}
