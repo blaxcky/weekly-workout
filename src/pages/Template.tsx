@@ -99,17 +99,26 @@ export default function Template() {
   const handleMove = async (index: number, direction: 'up' | 'down') => {
     const entry = template[index];
     if (!entry) return;
+    const exercise = exerciseMap.get(entry.exerciseId);
+    if (!exercise) return;
 
-    const currentGroup = entry.isOptional ? [...optionalTemplate] : [...requiredTemplate];
+    const currentGroup = (entry.isOptional ? optionalTemplate : requiredTemplate)
+      .filter((item) => exerciseMap.get(item.exerciseId)?.type === exercise.type);
     const otherGroup = entry.isOptional ? requiredTemplate : optionalTemplate;
     const groupIndex = currentGroup.findIndex((item) => item.id === entry.id);
     const swapIndex = direction === 'up' ? groupIndex - 1 : groupIndex + 1;
     if (groupIndex < 0 || swapIndex < 0 || swapIndex >= currentGroup.length) return;
 
-    [currentGroup[groupIndex], currentGroup[swapIndex]] = [currentGroup[swapIndex], currentGroup[groupIndex]];
+    const reorderedGroup = [...currentGroup];
+    [reorderedGroup[groupIndex], reorderedGroup[swapIndex]] = [reorderedGroup[swapIndex], reorderedGroup[groupIndex]];
+    const remainingSameSection = (entry.isOptional ? optionalTemplate : requiredTemplate)
+      .filter((item) => exerciseMap.get(item.exerciseId)?.type !== exercise.type);
+    const reorderedSection = exercise.type === 'physio'
+      ? [...reorderedGroup, ...remainingSameSection]
+      : [...remainingSameSection, ...reorderedGroup];
     const reorderedTemplate = entry.isOptional
-      ? [...otherGroup, ...currentGroup]
-      : [...currentGroup, ...otherGroup];
+      ? [...otherGroup, ...reorderedSection]
+      : [...reorderedSection, ...otherGroup];
     await reorderTemplate(reorderedTemplate);
   };
 
@@ -202,135 +211,161 @@ export default function Template() {
     ));
   };
 
+  const renderTemplateEntryList = (entries: typeof template) => {
+    if (entries.length === 0) return null;
+
+    return (
+      <List disablePadding>
+        {entries.map((entry, index) => {
+          const ex = exerciseMap.get(entry.exerciseId);
+          if (!ex) return null;
+          return (
+            <Card key={entry.id} sx={{ mb: 1.5 }}>
+              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                <ListItem disablePadding>
+                  <ListItemText
+                    primary={
+                      <Typography fontWeight={600}>{ex.name}</Typography>
+                    }
+                    secondary={
+                      <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Chip label={ex.type === 'kraft' ? 'Kraft' : 'Physio'} size="small" variant="outlined" />
+                        <Chip
+                          label={entry.isOptional ? 'Optional' : 'Pflicht'}
+                          size="small"
+                          color={entry.isOptional ? 'default' : 'success'}
+                          variant={entry.isOptional ? 'outlined' : 'filled'}
+                        />
+                        <Chip label={`${ex.kcalPerCompletion} kcal`} size="small" variant="outlined" />
+                        <TextField
+                          type="number"
+                          value={targetDrafts[entry.exerciseId] ?? entry.targetCount.toString()}
+                          onChange={(e) => handleTargetDraftChange(entry.exerciseId, e.target.value)}
+                          onBlur={() => {
+                            void commitTargetDraft(entry.exerciseId);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void commitTargetDraft(entry.exerciseId);
+                            }
+                          }}
+                          size="small"
+                          label="x/Woche"
+                          sx={{ width: 90 }}
+                          inputProps={{ min: 1, max: 14 }}
+                        />
+                      </Box>
+                    }
+                  />
+                  <Box sx={{ display: 'flex', flexDirection: 'column', ml: 1 }}>
+                    <IconButton size="small" onClick={() => handleMove(template.findIndex((item) => item.id === entry.id), 'up')} disabled={index === 0}>
+                      <ArrowUpwardIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={() => handleMove(template.findIndex((item) => item.id === entry.id), 'down')} disabled={index === entries.length - 1}>
+                      <ArrowDownwardIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                  <IconButton size="small" onClick={() => handleRemove(entry.exerciseId)} sx={{ ml: 0.5 }}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </ListItem>
+                <Box sx={{ mt: 1.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={entry.isOptional ? 'optional' : 'required'}
+                      onChange={(_, value: 'required' | 'optional' | null) => {
+                        void handleUpdateOptional(entry.exerciseId, value);
+                      }}
+                    >
+                      <ToggleButton value="required">Pflicht</ToggleButton>
+                      <ToggleButton value="optional">Optional</ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Tage:
+                    </Typography>
+                    {entry.scheduledDays && entry.scheduledDays.length > 0 ? (
+                      <Chip
+                        label="Auto"
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleClearDays(entry.exerciseId)}
+                        sx={{ fontSize: '0.65rem', height: 20 }}
+                      />
+                    ) : (
+                      <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                        automatisch ({getScheduledDays(
+                          entry,
+                          entry.isOptional ? optionalScheduledDaysMap : requiredScheduledDaysMap,
+                        ).map((d) => WEEKDAY_SHORT[d]).join(', ')})
+                      </Typography>
+                    )}
+                  </Box>
+                  <ToggleButtonGroup
+                    size="small"
+                    value={entry.scheduledDays ?? []}
+                    sx={{ flexWrap: 'wrap', gap: 0.5 }}
+                  >
+                    {WEEKDAY_SHORT.map((day, i) => (
+                      <ToggleButton
+                        key={day}
+                        value={i}
+                        onClick={() => handleToggleDay(entry.exerciseId, i)}
+                        selected={(entry.scheduledDays ?? []).includes(i)}
+                        sx={{
+                          px: 1,
+                          py: 0.25,
+                          fontSize: '0.7rem',
+                          minWidth: 36,
+                          borderRadius: '12px !important',
+                          border: '1px solid !important',
+                          borderColor: 'divider !important',
+                        }}
+                      >
+                        {day}
+                      </ToggleButton>
+                    ))}
+                  </ToggleButtonGroup>
+                </Box>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </List>
+    );
+  };
+
   const renderTemplateSection = (title: string, entries: typeof template) => {
     if (entries.length === 0) return null;
+
+    const physioEntries = entries.filter((entry) => exerciseMap.get(entry.exerciseId)?.type === 'physio');
+    const strengthEntries = entries.filter((entry) => exerciseMap.get(entry.exerciseId)?.type === 'kraft');
 
     return (
       <Box sx={{ mb: 2.5 }}>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
           {title}
         </Typography>
-        <List disablePadding>
-          {entries.map((entry, index) => {
-            const ex = exerciseMap.get(entry.exerciseId);
-            if (!ex) return null;
-            return (
-              <Card key={entry.id} sx={{ mb: 1.5 }}>
-                <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <ListItem disablePadding>
-                    <ListItemText
-                      primary={
-                        <Typography fontWeight={600}>{ex.name}</Typography>
-                      }
-                      secondary={
-                        <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <Chip label={ex.type === 'kraft' ? 'Kraft' : 'Physio'} size="small" variant="outlined" />
-                          <Chip
-                            label={entry.isOptional ? 'Optional' : 'Pflicht'}
-                            size="small"
-                            color={entry.isOptional ? 'default' : 'success'}
-                            variant={entry.isOptional ? 'outlined' : 'filled'}
-                          />
-                          <Chip label={`${ex.kcalPerCompletion} kcal`} size="small" variant="outlined" />
-                          <TextField
-                            type="number"
-                            value={targetDrafts[entry.exerciseId] ?? entry.targetCount.toString()}
-                            onChange={(e) => handleTargetDraftChange(entry.exerciseId, e.target.value)}
-                            onBlur={() => {
-                              void commitTargetDraft(entry.exerciseId);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                void commitTargetDraft(entry.exerciseId);
-                              }
-                            }}
-                            size="small"
-                            label="x/Woche"
-                            sx={{ width: 90 }}
-                            inputProps={{ min: 1, max: 14 }}
-                          />
-                        </Box>
-                      }
-                    />
-                    <Box sx={{ display: 'flex', flexDirection: 'column', ml: 1 }}>
-                      <IconButton size="small" onClick={() => handleMove(template.findIndex((item) => item.id === entry.id), 'up')} disabled={index === 0}>
-                        <ArrowUpwardIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => handleMove(template.findIndex((item) => item.id === entry.id), 'down')} disabled={index === entries.length - 1}>
-                        <ArrowDownwardIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                    <IconButton size="small" onClick={() => handleRemove(entry.exerciseId)} sx={{ ml: 0.5 }}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </ListItem>
-                  <Box sx={{ mt: 1.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
-                      <ToggleButtonGroup
-                        size="small"
-                        exclusive
-                        value={entry.isOptional ? 'optional' : 'required'}
-                        onChange={(_, value: 'required' | 'optional' | null) => {
-                          void handleUpdateOptional(entry.exerciseId, value);
-                        }}
-                      >
-                        <ToggleButton value="required">Pflicht</ToggleButton>
-                        <ToggleButton value="optional">Optional</ToggleButton>
-                      </ToggleButtonGroup>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Tage:
-                      </Typography>
-                      {entry.scheduledDays && entry.scheduledDays.length > 0 ? (
-                        <Chip
-                          label="Auto"
-                          size="small"
-                          variant="outlined"
-                          onClick={() => handleClearDays(entry.exerciseId)}
-                          sx={{ fontSize: '0.65rem', height: 20 }}
-                        />
-                      ) : (
-                        <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                          automatisch ({getScheduledDays(
-                            entry,
-                            entry.isOptional ? optionalScheduledDaysMap : requiredScheduledDaysMap,
-                          ).map((d) => WEEKDAY_SHORT[d]).join(', ')})
-                        </Typography>
-                      )}
-                    </Box>
-                    <ToggleButtonGroup
-                      size="small"
-                      value={entry.scheduledDays ?? []}
-                      sx={{ flexWrap: 'wrap', gap: 0.5 }}
-                    >
-                      {WEEKDAY_SHORT.map((day, i) => (
-                        <ToggleButton
-                          key={day}
-                          value={i}
-                          onClick={() => handleToggleDay(entry.exerciseId, i)}
-                          selected={(entry.scheduledDays ?? []).includes(i)}
-                          sx={{
-                            px: 1,
-                            py: 0.25,
-                            fontSize: '0.7rem',
-                            minWidth: 36,
-                            borderRadius: '12px !important',
-                            border: '1px solid !important',
-                            borderColor: 'divider !important',
-                          }}
-                        >
-                          {day}
-                        </ToggleButton>
-                      ))}
-                    </ToggleButtonGroup>
-                  </Box>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </List>
+        {physioEntries.length > 0 && (
+          <Box sx={{ mb: strengthEntries.length > 0 ? 1 : 0 }}>
+            <Typography variant="overline" sx={{ display: 'block', mb: 0.75, color: 'secondary.main', fontWeight: 700, letterSpacing: '0.08em' }}>
+              Physio
+            </Typography>
+            {renderTemplateEntryList(physioEntries)}
+          </Box>
+        )}
+        {strengthEntries.length > 0 && (
+          <Box>
+            <Typography variant="overline" sx={{ display: 'block', mb: 0.75, color: 'primary.main', fontWeight: 700, letterSpacing: '0.08em' }}>
+              Kraft
+            </Typography>
+            {renderTemplateEntryList(strengthEntries)}
+          </Box>
+        )}
       </Box>
     );
   };
