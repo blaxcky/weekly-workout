@@ -20,7 +20,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { useExercises, useWeeklyTemplate, useCompletions, useCardioEntries, removeCompletion, removeCardioEntry } from '../db/hooks';
-import type { Exercise } from '../db/database';
+import type { Exercise, WeeklyTemplateEntry } from '../db/database';
 import ExerciseCard from '../components/ExerciseCard';
 import CompletionDialog from '../components/CompletionDialog';
 import CardioDialog from '../components/CardioDialog';
@@ -118,6 +118,38 @@ export default function Dashboard() {
     );
   };
 
+  const renderExerciseTypeGroup = (
+    title: string,
+    entries: WeeklyTemplateEntry[],
+    color: string,
+  ) => {
+    if (entries.length === 0) return null;
+
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <Typography
+          variant="overline"
+          sx={{ display: 'block', mb: 0.75, color, fontWeight: 700, letterSpacing: '0.08em' }}
+        >
+          {title}
+        </Typography>
+        {entries.map(renderExerciseCard)}
+      </Box>
+    );
+  };
+
+  const renderTypedExerciseList = (entries: WeeklyTemplateEntry[]) => {
+    const physioEntries = entries.filter((entry) => exerciseMap.get(entry.exerciseId)?.type === 'physio');
+    const strengthEntries = entries.filter((entry) => exerciseMap.get(entry.exerciseId)?.type === 'kraft');
+
+    return (
+      <>
+        {renderExerciseTypeGroup('Physio', physioEntries, 'secondary.main')}
+        {renderExerciseTypeGroup('Kraft', strengthEntries, 'primary.main')}
+      </>
+    );
+  };
+
   return (
     <Box>
       {/* Week Header */}
@@ -201,7 +233,7 @@ export default function Dashboard() {
               <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
                 Heute dran
               </Typography>
-              {categories.todayTodo.map(renderExerciseCard)}
+              {renderTypedExerciseList(categories.todayTodo)}
             </Box>
           )}
 
@@ -234,7 +266,7 @@ export default function Dashboard() {
               count={categories.catchUp.length}
               icon={<CatchingPokemonIcon fontSize="small" color="warning" />}
             >
-              {categories.catchUp.map(renderExerciseCard)}
+              {renderTypedExerciseList(categories.catchUp)}
             </CollapsibleSection>
           )}
 
@@ -245,7 +277,7 @@ export default function Dashboard() {
               count={categories.doneToday.length}
               icon={<CheckCircleOutlineIcon fontSize="small" color="success" />}
             >
-              {categories.doneToday.map(renderExerciseCard)}
+              {renderTypedExerciseList(categories.doneToday)}
             </CollapsibleSection>
           )}
 
@@ -256,14 +288,18 @@ export default function Dashboard() {
               count={categories.weeklyComplete.length}
               icon={<EmojiEventsIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
             >
-              {categories.weeklyComplete.map(renderExerciseCard)}
+              {renderTypedExerciseList(categories.weeklyComplete)}
             </CollapsibleSection>
           )}
         </>
       )}
 
       {/* === SHOW ALL VIEW (legacy) === */}
-      {template.length > 0 && showAll && template.map(renderExerciseCard)}
+      {template.length > 0 && showAll && (
+        <Box sx={{ mb: 2 }}>
+          {renderTypedExerciseList(template)}
+        </Box>
+      )}
 
       {/* Cardio Entries */}
       {cardioEntries.length > 0 && (
