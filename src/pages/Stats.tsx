@@ -8,31 +8,47 @@ import {
   Divider,
 } from '@mui/material';
 import TodayIcon from '@mui/icons-material/Today';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
-import { useExercises, useWeeklyTemplate, useCompletions, useCardioEntries } from '../db/hooks';
+import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
+import EventAvailableIcon from '@mui/icons-material/EventAvailable';
+import {
+  useExercises,
+  useWeeklyTemplate,
+  useCompletions,
+  useCardioEntries,
+  useTrainingDays,
+} from '../db/hooks';
 import { getWeekId, formatWeekId, formatWeekRange, getWeekRange, getDateKey, WEEKDAY_SHORT } from '../utils/week';
+import type { Exercise } from '../db/database';
 
 export default function Stats() {
   const exercises = useExercises();
   const template = useWeeklyTemplate();
   const completions = useCompletions();
   const cardioEntries = useCardioEntries();
+  const trainingDays = useTrainingDays();
   const weekId = getWeekId();
-  const requiredTemplate = useMemo(
-    () => template.filter((entry) => !entry.isOptional),
-    [template],
-  );
-  const optionalTemplate = useMemo(
-    () => template.filter((entry) => entry.isOptional),
-    [template],
-  );
 
   const exerciseMap = useMemo(() => {
+    const map = new Map<string, Exercise>();
+    exercises.forEach((e) => map.set(e.id, e));
+    return map;
+  }, [exercises]);
+
+  const exerciseNameMap = useMemo(() => {
     const map = new Map<string, string>();
     exercises.forEach((e) => map.set(e.id, e.name));
     return map;
   }, [exercises]);
+
+  const kraftTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional && exerciseMap.get(entry.exerciseId)?.type === 'kraft'),
+    [template, exerciseMap],
+  );
+  const physioTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional && exerciseMap.get(entry.exerciseId)?.type === 'physio'),
+    [template, exerciseMap],
+  );
 
   const completionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -41,6 +57,19 @@ export default function Stats() {
     });
     return counts;
   }, [completions]);
+
+  // Count how many training days each kraft exercise was completed on
+  const kraftDaysCounts = useMemo(() => {
+    const counts = new Map<string, Set<string>>();
+    completions.forEach((c) => {
+      const ex = exerciseMap.get(c.exerciseId);
+      if (ex?.type !== 'kraft') return;
+      const dateKey = getDateKey(new Date(c.completedAt));
+      if (!counts.has(c.exerciseId)) counts.set(c.exerciseId, new Set());
+      counts.get(c.exerciseId)!.add(dateKey);
+    });
+    return counts;
+  }, [completions, exerciseMap]);
 
   // Daily kcal breakdown (Mo–So)
   const dailyKcal = useMemo(() => {
@@ -70,47 +99,8 @@ export default function Stats() {
   const weekKcal = weekExerciseKcal + weekCardioKcal;
   const maxDayKcal = Math.max(...dailyKcal.map((d) => d.kcal), 1);
 
-  const totalTarget = requiredTemplate.reduce((sum, t) => sum + t.targetCount, 0);
-  const totalCompleted = requiredTemplate.reduce(
-    (sum, t) => sum + Math.min(completionCounts.get(t.exerciseId) ?? 0, t.targetCount),
-    0,
-  );
-  const overallProgress = totalTarget > 0 ? (totalCompleted / totalTarget) * 100 : 0;
-
-  const renderExerciseProgressList = (entries: typeof template, title: string) => {
-    if (entries.length === 0) return null;
-
-    return (
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-          {title}
-        </Typography>
-        {entries.map((t, index) => {
-          const name = exerciseMap.get(t.exerciseId) ?? 'Unbekannt';
-          const done = completionCounts.get(t.exerciseId) ?? 0;
-          const capped = Math.min(done, t.targetCount);
-          const pct = t.targetCount > 0 ? (capped / t.targetCount) * 100 : 0;
-          return (
-            <Box key={t.id} sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                <Typography variant="body2" fontWeight={600}>{name}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {done}/{t.targetCount}
-                </Typography>
-              </Box>
-              <LinearProgress
-                variant="determinate"
-                value={pct}
-                sx={{ height: 6, borderRadius: 3 }}
-                color={done >= t.targetCount ? 'success' : 'primary'}
-              />
-              {index < entries.length - 1 && <Divider sx={{ mt: 2 }} />}
-            </Box>
-          );
-        })}
-      </Box>
-    );
-  };
+  const trainingDayCount = trainingDays.length;
+  const trainingDateSet = useMemo(() => new Set(trainingDays.map((td) => td.date)), [trainingDays]);
 
   return (
     <Box>
@@ -120,6 +110,51 @@ export default function Stats() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         {formatWeekId(weekId)} • {formatWeekRange()}
       </Typography>
+
+      {/* Training Days Overview */}
+      <Card sx={{ mb: 2 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <EventAvailableIcon color="primary" />
+            <Typography variant="h6" fontWeight={600}>Trainingstage</Typography>
+          </Box>
+          <Typography variant="h3" fontWeight={700} color="primary.main">
+            {trainingDayCount}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Trainingstage diese Woche
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            {WEEKDAY_SHORT.map((day, i) => {
+              const { monday } = getWeekRange();
+              const d = new Date(monday);
+              d.setDate(monday.getDate() + i);
+              const dateKey = getDateKey(d);
+              const isTrainingDay = trainingDateSet.has(dateKey);
+              return (
+                <Box
+                  key={day}
+                  sx={{
+                    flex: 1,
+                    textAlign: 'center',
+                    py: 0.5,
+                    borderRadius: 1,
+                    bgcolor: isTrainingDay ? 'primary.main' : 'action.hover',
+                    color: isTrainingDay ? 'primary.contrastText' : 'text.disabled',
+                  }}
+                >
+                  <Typography variant="caption" fontWeight={isTrainingDay ? 700 : 400} sx={{ fontSize: '0.65rem' }}>
+                    {day}
+                  </Typography>
+                  {isTrainingDay && (
+                    <Typography sx={{ fontSize: '0.7rem' }}>💪</Typography>
+                  )}
+                </Box>
+              );
+            })}
+          </Box>
+        </CardContent>
+      </Card>
 
       {/* Daily kcal breakdown */}
       <Card sx={{ mb: 2 }}>
@@ -171,48 +206,81 @@ export default function Stats() {
         </CardContent>
       </Card>
 
-      {/* Overall Progress */}
-      <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <CheckCircleIcon color="success" />
-            <Typography variant="h6" fontWeight={600}>Pflichtfortschritt</Typography>
-          </Box>
-          <Typography variant="h3" fontWeight={700} color="success.main">
-            {totalCompleted}/{totalTarget}
-          </Typography>
-          <LinearProgress
-            variant="determinate"
-            value={overallProgress}
-            sx={{ height: 10, borderRadius: 5, mt: 1 }}
-            color="success"
-          />
-        </CardContent>
-      </Card>
+      {/* Kraft Progress */}
+      {kraftTemplate.length > 0 && (
+        <Card sx={{ mb: 2 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <FitnessCenterIcon color="primary" />
+              <Typography variant="h6" fontWeight={600}>Kraft</Typography>
+            </Box>
+            {kraftTemplate.map((t, index) => {
+              const name = exerciseNameMap.get(t.exerciseId) ?? 'Unbekannt';
+              const daysCompleted = kraftDaysCounts.get(t.exerciseId)?.size ?? 0;
+              const pct = trainingDayCount > 0 ? Math.min((daysCompleted / trainingDayCount) * 100, 100) : 0;
+              return (
+                <Box key={t.id} sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600}>{name}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {daysCompleted}/{trainingDayCount} Trainingstage
+                    </Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={pct}
+                    sx={{ height: 6, borderRadius: 3 }}
+                    color={daysCompleted >= trainingDayCount && trainingDayCount > 0 ? 'success' : 'primary'}
+                  />
+                  {index < kraftTemplate.length - 1 && <Divider sx={{ mt: 2 }} />}
+                </Box>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Per-Exercise Breakdown */}
-      <Card>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <FitnessCenterIcon color="primary" />
-            <Typography variant="h6" fontWeight={600}>Einzelne Übungen</Typography>
-          </Box>
-          {template.length === 0 ? (
-            <Typography color="text.secondary">Keine Vorlage konfiguriert.</Typography>
-          ) : (
-            <>
-              {requiredTemplate.length > 0 ? (
-                renderExerciseProgressList(requiredTemplate, 'Pflichtübungen')
-              ) : (
-                <Typography color="text.secondary" sx={{ mb: optionalTemplate.length > 0 ? 2 : 0 }}>
-                  Keine Pflichtübungen konfiguriert.
-                </Typography>
-              )}
-              {renderExerciseProgressList(optionalTemplate, 'Optionale Übungen')}
-            </>
-          )}
-        </CardContent>
-      </Card>
+      {/* Physio Progress */}
+      {physioTemplate.length > 0 && (
+        <Card sx={{ mb: 2 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <SelfImprovementIcon color="secondary" />
+              <Typography variant="h6" fontWeight={600}>Physio</Typography>
+            </Box>
+            {physioTemplate.map((t, index) => {
+              const name = exerciseNameMap.get(t.exerciseId) ?? 'Unbekannt';
+              const done = completionCounts.get(t.exerciseId) ?? 0;
+              const capped = Math.min(done, t.targetCount);
+              const pct = t.targetCount > 0 ? (capped / t.targetCount) * 100 : 0;
+              return (
+                <Box key={t.id} sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600}>{name}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {done}/{t.targetCount} pro Woche
+                    </Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={pct}
+                    sx={{ height: 6, borderRadius: 3 }}
+                    color={done >= t.targetCount ? 'success' : 'secondary'}
+                  />
+                  {index < physioTemplate.length - 1 && <Divider sx={{ mt: 2 }} />}
+                </Box>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty state */}
+      {template.length === 0 && (
+        <Card sx={{ p: 3, textAlign: 'center' }}>
+          <Typography color="text.secondary">Keine Vorlage konfiguriert.</Typography>
+        </Card>
+      )}
     </Box>
   );
 }

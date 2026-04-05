@@ -22,21 +22,27 @@ export default function WeekOverview({ dayStats }: WeekOverviewProps) {
       {dayStats.map((stat) => {
         const isToday = stat.dayIndex === todayIndex;
         const isPast = stat.dayIndex < todayIndex;
-        const allDone = stat.scheduled > 0 && stat.completed >= stat.scheduled;
-        const hasMissed = isPast && stat.scheduled > 0 && stat.completed < stat.scheduled;
-        const nothingScheduled = stat.scheduled === 0;
 
         let dotColor: string;
-        if (nothingScheduled) {
-          dotColor = 'action.disabledBackground';
-        } else if (allDone) {
-          dotColor = 'success.main';
-        } else if (hasMissed) {
-          dotColor = 'warning.main';
-        } else if (isToday) {
-          dotColor = 'primary.main';
+        let label = '';
+
+        if (stat.isTrainingDay) {
+          const allDone = stat.kraftTotal > 0 && stat.kraftCompleted >= stat.kraftTotal;
+          if (allDone) {
+            dotColor = 'success.main';
+            label = '✓';
+          } else if (isPast && stat.kraftTotal > 0) {
+            dotColor = 'warning.main';
+            label = `${stat.kraftCompleted}/${stat.kraftTotal}`;
+          } else {
+            dotColor = isToday ? 'primary.main' : 'info.main';
+            label = stat.kraftTotal > 0 ? `${stat.kraftCompleted}/${stat.kraftTotal}` : '💪';
+          }
         } else {
-          dotColor = 'action.selected';
+          dotColor = isToday ? 'action.selected' : 'action.disabledBackground';
+          if (stat.physioCompleted > 0) {
+            label = String(stat.physioCompleted);
+          }
         }
 
         return (
@@ -72,15 +78,15 @@ export default function WeekOverview({ dayStats }: WeekOverviewProps) {
                 borderColor: 'primary.main',
               }}
             >
-              {stat.scheduled > 0 && (
+              {label && (
                 <Typography
                   sx={{
-                    fontSize: '0.7rem',
+                    fontSize: '0.65rem',
                     fontWeight: 600,
-                    color: allDone || hasMissed ? '#fff' : 'text.secondary',
+                    color: stat.isTrainingDay ? '#fff' : 'text.secondary',
                   }}
                 >
-                  {stat.completed}/{stat.scheduled}
+                  {label}
                 </Typography>
               )}
             </Box>

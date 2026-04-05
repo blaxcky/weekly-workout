@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from './database';
 import type { Exercise, WeeklyTemplateEntry } from './database';
-import { getWeekId } from '../utils/week';
+import { getWeekId, getDateKey } from '../utils/week';
 
 // ─── Exercises ───
 
@@ -39,14 +39,13 @@ export async function setTemplateEntry(
   exerciseId: string,
   targetCount: number,
   order: number,
-  scheduledDays?: number[],
   isOptional = false,
 ) {
   const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
   if (existing) {
-    return db.weeklyTemplate.update(existing.id, { targetCount, order, scheduledDays, isOptional });
+    return db.weeklyTemplate.update(existing.id, { targetCount, order, isOptional });
   }
-  return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order, scheduledDays, isOptional });
+  return db.weeklyTemplate.add({ id: uuidv4(), exerciseId, targetCount, order, isOptional });
 }
 
 export async function addTemplateEntries(
@@ -68,13 +67,6 @@ export async function addTemplateEntries(
   });
 }
 
-export async function updateTemplateScheduledDays(exerciseId: string, scheduledDays?: number[]) {
-  const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
-  if (existing) {
-    return db.weeklyTemplate.update(existing.id, { scheduledDays });
-  }
-}
-
 export async function updateTemplateOptional(exerciseId: string, isOptional: boolean) {
   const existing = await db.weeklyTemplate.where('exerciseId').equals(exerciseId).first();
   if (existing) {
@@ -92,6 +84,35 @@ export async function reorderTemplate(entries: WeeklyTemplateEntry[]) {
       await db.weeklyTemplate.update(entries[i].id, { order: i });
     }
   });
+}
+
+// ─── Training Days ───
+
+export function useTrainingDays(weekId?: string) {
+  const wk = weekId ?? getWeekId();
+  return useLiveQuery(() => db.trainingDays.where('weekId').equals(wk).toArray(), [wk]) ?? [];
+}
+
+export function useIsTrainingDay(date?: Date) {
+  const dateKey = getDateKey(date);
+  return useLiveQuery(() => db.trainingDays.where('date').equals(dateKey).first(), [dateKey]);
+}
+
+export async function toggleTrainingDay(date: Date = new Date()) {
+  const dateKey = getDateKey(date);
+  const weekId = getWeekId(date);
+  const existing = await db.trainingDays.where('date').equals(dateKey).first();
+  if (existing) {
+    await db.trainingDays.delete(existing.id);
+    return false;
+  }
+  await db.trainingDays.add({
+    id: uuidv4(),
+    weekId,
+    date: dateKey,
+    createdAt: Date.now(),
+  });
+  return true;
 }
 
 // ─── Completed Exercises ───

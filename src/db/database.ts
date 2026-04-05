@@ -15,10 +15,11 @@ export interface Exercise {
 export interface WeeklyTemplateEntry {
   id: string;
   exerciseId: string;
+  /** For physio: weekly target (e.g. 5x/week). For kraft: ignored (always 1x per training day). */
   targetCount: number;
   order: number;
   isOptional?: boolean;
-  /** Optional: manually assigned weekday indices (0=Mo..4=Fr, 5=Sa, 6=So). If unset, auto-scheduled. */
+  /** @deprecated No longer used – kept for migration compatibility. */
   scheduledDays?: number[];
 }
 
@@ -40,11 +41,20 @@ export interface CardioEntry {
   createdAt: number;
 }
 
+export interface TrainingDay {
+  id: string;
+  weekId: string;
+  /** Date key like "2026-04-05" */
+  date: string;
+  createdAt: number;
+}
+
 const db = new Dexie('WeeklyWorkoutDB') as Dexie & {
   exercises: EntityTable<Exercise, 'id'>;
   weeklyTemplate: EntityTable<WeeklyTemplateEntry, 'id'>;
   completedExercises: EntityTable<CompletedExercise, 'id'>;
   cardioEntries: EntityTable<CardioEntry, 'id'>;
+  trainingDays: EntityTable<TrainingDay, 'id'>;
 };
 
 db.version(1).stores({
@@ -52,6 +62,14 @@ db.version(1).stores({
   weeklyTemplate: 'id, exerciseId, order',
   completedExercises: 'id, exerciseId, weekId, completedAt',
   cardioEntries: 'id, weekId, createdAt',
+});
+
+db.version(2).stores({
+  exercises: 'id, name, type, createdAt',
+  weeklyTemplate: 'id, exerciseId, order',
+  completedExercises: 'id, exerciseId, weekId, completedAt',
+  cardioEntries: 'id, weekId, createdAt',
+  trainingDays: 'id, weekId, date',
 });
 
 export { db };

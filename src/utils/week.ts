@@ -66,3 +66,15 @@ export const WEEKDAY_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] as const
 export function getTodayWeekdayIndex(): number {
   return getWeekdayIndex(new Date());
 }
+
+/**
+ * Returns all 7 date keys (Mon-Sun) for the ISO week of the given date.
+ */
+export function getWeekDateKeys(date: Date = new Date()): string[] {
+  const { monday } = getWeekRange(date);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return getDateKey(d);
+  });
+}

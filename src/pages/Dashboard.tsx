@@ -8,84 +8,87 @@ import {
   Chip,
   IconButton,
   Divider,
-  Button,
+  Switch,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
+import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
+import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import { useExercises, useWeeklyTemplate, useCompletions, useCardioEntries, removeCompletion, removeCardioEntry } from '../db/hooks';
-import type { Exercise, WeeklyTemplateEntry } from '../db/database';
+import {
+  useExercises,
+  useWeeklyTemplate,
+  useCompletions,
+  useCardioEntries,
+  useTrainingDays,
+  useIsTrainingDay,
+  toggleTrainingDay,
+  removeCompletion,
+  removeCardioEntry,
+} from '../db/hooks';
+import type { Exercise } from '../db/database';
 import ExerciseCard from '../components/ExerciseCard';
 import CompletionDialog from '../components/CompletionDialog';
 import CardioDialog from '../components/CardioDialog';
 import CollapsibleSection from '../components/CollapsibleSection';
 import WeekOverview from '../components/WeekOverview';
-import { getWeekId, formatWeekId, formatWeekRange, getDateKey, getWeekdayIndex } from '../utils/week';
-import { categorizeDashboard, getWeekDayStats } from '../utils/schedule';
+import { getWeekId, formatWeekId, formatWeekRange, getDateKey, getWeekDateKeys } from '../utils/week';
+import { categorizeKraft, categorizePhysio, getWeekDayStats, getTrainingDayCount } from '../utils/schedule';
 
 export default function Dashboard() {
   const exercises = useExercises();
   const template = useWeeklyTemplate();
   const completions = useCompletions();
   const cardioEntries = useCardioEntries();
+  const trainingDays = useTrainingDays();
+  const trainingDayEntry = useIsTrainingDay();
+  const isTrainingDay = !!trainingDayEntry;
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
   const [completionOpen, setCompletionOpen] = useState(false);
   const [cardioOpen, setCardioOpen] = useState(false);
-  const [showAll, setShowAll] = useState(false);
 
   const weekId = getWeekId();
   const todayKey = getDateKey();
+  const weekDateKeys = useMemo(() => getWeekDateKeys(), []);
 
   const exerciseMap = useMemo(() => {
     const map = new Map<string, Exercise>();
     exercises.forEach((e) => map.set(e.id, e));
     return map;
   }, [exercises]);
-  const requiredTemplate = useMemo(
-    () => template.filter((entry) => !entry.isOptional),
-    [template],
+
+  // Split template by type
+  const kraftTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional && exerciseMap.get(entry.exerciseId)?.type === 'kraft'),
+    [template, exerciseMap],
+  );
+  const physioTemplate = useMemo(
+    () => template.filter((entry) => !entry.isOptional && exerciseMap.get(entry.exerciseId)?.type === 'physio'),
+    [template, exerciseMap],
   );
   const optionalTemplate = useMemo(
     () => template.filter((entry) => entry.isOptional),
     [template],
   );
 
-  const completionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    completions.forEach((c) => {
-      counts.set(c.exerciseId, (counts.get(c.exerciseId) ?? 0) + 1);
-    });
-    return counts;
-  }, [completions]);
-
-  const completedDaysMap = useMemo(() => {
-    const map = new Map<string, number[]>();
-    completions.forEach((c) => {
-      const dayIndex = getWeekdayIndex(new Date(c.completedAt));
-      const days = map.get(c.exerciseId) ?? [];
-      if (!days.includes(dayIndex)) days.push(dayIndex);
-      map.set(c.exerciseId, days);
-    });
-    return map;
-  }, [completions]);
-
-  // Smart categorization
-  const categories = useMemo(
-    () => categorizeDashboard(requiredTemplate, completions),
-    [requiredTemplate, completions],
+  // Categorize
+  const kraft = useMemo(
+    () => categorizeKraft(kraftTemplate, completions),
+    [kraftTemplate, completions],
+  );
+  const physio = useMemo(
+    () => categorizePhysio(physioTemplate, completions),
+    [physioTemplate, completions],
   );
 
   // Week overview stats
   const dayStats = useMemo(
-    () => getWeekDayStats(requiredTemplate, completions),
-    [requiredTemplate, completions],
+    () => getWeekDayStats(kraftTemplate, completions, trainingDays, exerciseMap, weekDateKeys),
+    [kraftTemplate, completions, trainingDays, exerciseMap, weekDateKeys],
   );
+
+  const trainingDayCount = getTrainingDayCount(trainingDays);
 
   // Daily kcal
   const todayExerciseKcal = completions
@@ -96,85 +99,49 @@ export default function Dashboard() {
     .reduce((sum, c) => sum + c.kcal, 0);
   const todayKcal = todayExerciseKcal + todayCardioKcal;
 
-  // Weekly kcal
   const weekKcal = completions.reduce((sum, c) => sum + c.kcal, 0)
     + cardioEntries.reduce((sum, c) => sum + c.kcal, 0);
 
-  const totalTarget = requiredTemplate.reduce((sum, t) => sum + t.targetCount, 0);
-  const totalCompleted = requiredTemplate.reduce(
-    (sum, t) => sum + Math.min(completionCounts.get(t.exerciseId) ?? 0, t.targetCount),
-    0,
-  );
-  const allRequiredComplete = requiredTemplate.length > 0 && categories.weeklyComplete.length === requiredTemplate.length;
+  const allKraftDoneToday = kraftTemplate.length > 0 && kraft.todo.length === 0;
+  const allPhysioDoneWeek = physioTemplate.length > 0 && physio.todo.length === 0;
+
+  const handleToggleTrainingDay = async () => {
+    await toggleTrainingDay();
+  };
 
   const handleComplete = (exercise: Exercise) => {
     setSelectedExercise(exercise);
     setCompletionOpen(true);
   };
 
-  const renderExerciseCard = (t: (typeof template)[number]) => {
+  const renderKraftCard = (t: typeof template[number]) => {
     const exercise = exerciseMap.get(t.exerciseId);
     if (!exercise) return null;
+    const doneToday = kraft.done.some((d) => d.exerciseId === t.exerciseId);
     return (
       <ExerciseCard
         key={t.id}
         exercise={exercise}
-        completed={completionCounts.get(t.exerciseId) ?? 0}
-        target={t.targetCount}
-        completedDays={completedDaysMap.get(t.exerciseId) ?? []}
+        mode="kraft"
+        doneToday={doneToday}
         onComplete={() => handleComplete(exercise)}
       />
     );
   };
 
-  const renderExerciseTypeGroup = (
-    title: string,
-    entries: WeeklyTemplateEntry[],
-    color: string,
-  ) => {
-    if (entries.length === 0) return null;
-
+  const renderPhysioCard = (t: typeof template[number]) => {
+    const exercise = exerciseMap.get(t.exerciseId);
+    if (!exercise) return null;
+    const weekCount = physio.weekCounts.get(t.exerciseId) ?? 0;
     return (
-      <Box sx={{ mb: 1.5 }}>
-        <Typography
-          variant="overline"
-          sx={{ display: 'block', mb: 0.75, color, fontWeight: 700, letterSpacing: '0.08em' }}
-        >
-          {title}
-        </Typography>
-        {entries.map(renderExerciseCard)}
-      </Box>
-    );
-  };
-
-  const renderTypedExerciseList = (entries: WeeklyTemplateEntry[]) => {
-    const physioEntries = entries.filter((entry) => exerciseMap.get(entry.exerciseId)?.type === 'physio');
-    const strengthEntries = entries.filter((entry) => exerciseMap.get(entry.exerciseId)?.type === 'kraft');
-
-    return (
-      <>
-        {renderExerciseTypeGroup('Physio', physioEntries, 'secondary.main')}
-        {renderExerciseTypeGroup('Kraft', strengthEntries, 'primary.main')}
-      </>
-    );
-  };
-
-  const renderOptionalSection = () => {
-    if (optionalTemplate.length === 0) return null;
-
-    return (
-      <CollapsibleSection
-        title="Optionale Übungen"
-        count={optionalTemplate.length}
-        defaultExpanded={allRequiredComplete || requiredTemplate.length === 0}
-      >
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          {allRequiredComplete || requiredTemplate.length === 0
-            ? 'Pflicht ist erledigt. Wenn du noch Energie hast, kannst du hier weitermachen.'
-            : 'Für später, wenn die Pflichtübungen geschafft sind.'}
-        </Typography>
-        {renderTypedExerciseList(optionalTemplate)}
-      </CollapsibleSection>
+      <ExerciseCard
+        key={t.id}
+        exercise={exercise}
+        mode="physio"
+        weekCount={weekCount}
+        weekTarget={t.targetCount}
+        onComplete={() => handleComplete(exercise)}
+      />
     );
   };
 
@@ -190,9 +157,9 @@ export default function Dashboard() {
         </Typography>
       </Box>
 
-      {/* Stats Cards */}
+      {/* Stats Row */}
       <Box sx={{ display: 'flex', gap: 1.5, mb: 2, overflow: 'auto' }}>
-        <Card sx={{ flex: 1, minWidth: 120 }}>
+        <Card sx={{ flex: 1, minWidth: 100 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
               <LocalFireDepartmentIcon color="error" fontSize="small" />
@@ -201,7 +168,7 @@ export default function Dashboard() {
             <Typography variant="h4" fontWeight={700} color="error.main">{todayKcal}</Typography>
           </CardContent>
         </Card>
-        <Card sx={{ flex: 1, minWidth: 120 }}>
+        <Card sx={{ flex: 1, minWidth: 100 }}>
           <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
               <LocalFireDepartmentIcon fontSize="small" sx={{ color: 'text.secondary' }} />
@@ -210,21 +177,63 @@ export default function Dashboard() {
             <Typography variant="h5" fontWeight={700}>{weekKcal}</Typography>
           </CardContent>
         </Card>
-        <Card sx={{ flex: 1, minWidth: 100 }}>
-          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-              <BarChartIcon color="primary" fontSize="small" />
-              <Typography variant="caption" color="text.secondary">Pflicht</Typography>
-            </Box>
-            <Typography variant="h5" fontWeight={700}>
-              {totalCompleted}/{totalTarget}
-            </Typography>
-          </CardContent>
-        </Card>
       </Box>
 
       {/* Week Overview */}
-      {requiredTemplate.length > 0 && <WeekOverview dayStats={dayStats} />}
+      {(kraftTemplate.length > 0 || physioTemplate.length > 0) && (
+        <CollapsibleSection title="Wochenübersicht" defaultExpanded={false}>
+          <WeekOverview dayStats={dayStats} />
+        </CollapsibleSection>
+      )}
+
+      {/* Training Day Toggle */}
+      {template.length > 0 && (
+        <Card
+          sx={{
+            mb: 2,
+            border: '2px solid',
+            borderColor: isTrainingDay ? 'primary.main' : 'divider',
+            bgcolor: isTrainingDay ? 'primary.main' : 'background.paper',
+            transition: 'all 0.3s',
+          }}
+        >
+          <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography variant="h6" sx={{ fontSize: '1.5rem' }}>💪</Typography>
+                <Box>
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight={700}
+                    sx={{ color: isTrainingDay ? 'primary.contrastText' : 'text.primary' }}
+                  >
+                    Heute ist Trainingstag
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: isTrainingDay ? 'primary.contrastText' : 'text.secondary', opacity: 0.8 }}
+                  >
+                    {trainingDayCount} diese Woche
+                  </Typography>
+                </Box>
+              </Box>
+              <Switch
+                checked={isTrainingDay}
+                onChange={handleToggleTrainingDay}
+                color="default"
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked': {
+                    color: '#fff',
+                  },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    bgcolor: 'rgba(255,255,255,0.5)',
+                  },
+                }}
+              />
+            </Box>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Empty State */}
       {template.length === 0 && (
@@ -238,106 +247,86 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Show All Toggle */}
-      {template.length > 0 && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-          <Button
-            size="small"
-            startIcon={showAll ? <VisibilityOffIcon /> : <VisibilityIcon />}
-            onClick={() => setShowAll(!showAll)}
-            sx={{ textTransform: 'none' }}
-          >
-            {showAll ? 'Smart-Ansicht' : 'Alle anzeigen'}
-          </Button>
+      {/* Kraft Section – only when training day is ON */}
+      {isTrainingDay && kraftTemplate.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <FitnessCenterIcon color="primary" fontSize="small" />
+            <Typography variant="subtitle2" color="primary.main" fontWeight={700}>
+              Kraft-Übungen
+            </Typography>
+            {allKraftDoneToday && (
+              <Chip label="✓ Alle erledigt" size="small" color="success" />
+            )}
+          </Box>
+          {kraft.todo.map(renderKraftCard)}
+          {kraft.done.length > 0 && kraft.todo.length > 0 && (
+            <Divider sx={{ my: 1 }} />
+          )}
+          {kraft.done.map(renderKraftCard)}
         </Box>
       )}
 
-      {/* === SMART VIEW === */}
-      {template.length > 0 && !showAll && (
-        <>
-          {/* Today's exercises */}
-          {categories.todayTodo.length > 0 && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                Heute dran
-              </Typography>
-              {renderTypedExerciseList(categories.todayTodo)}
-            </Box>
-          )}
-
-          {/* Nothing to do today message */}
-          {categories.todayTodo.length === 0 && categories.catchUp.length === 0 &&
-            categories.doneToday.length === 0 && categories.weeklyComplete.length < requiredTemplate.length &&
-            requiredTemplate.length > 0 && (
-            <Card sx={{ p: 3, textAlign: 'center', mb: 2 }}>
-              <Typography color="text.secondary">
-                🎉 Heute nichts geplant!
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Genieße den freien Tag oder schau unter "Alle anzeigen" nach offenen Übungen.
-              </Typography>
-            </Card>
-          )}
-
-          {/* All done for the week */}
-          {allRequiredComplete && (
-            <Card sx={{ p: 3, textAlign: 'center', mb: 2, border: '2px solid', borderColor: 'success.main' }}>
-              <Typography variant="h6" color="success.main" fontWeight={700}>
-                🏆 Alle Pflichtziele erreicht!
-              </Typography>
-            </Card>
-          )}
-
-          {/* Catch-up section */}
-          {categories.catchUp.length > 0 && (
-            <CollapsibleSection
-              title="Aufholen"
-              count={categories.catchUp.length}
-              icon={<CatchingPokemonIcon fontSize="small" color="warning" />}
-            >
-              {renderTypedExerciseList(categories.catchUp)}
-            </CollapsibleSection>
-          )}
-
-          {/* Done today */}
-          {categories.doneToday.length > 0 && (
-            <CollapsibleSection
-              title="Heute erledigt"
-              count={categories.doneToday.length}
-              icon={<CheckCircleOutlineIcon fontSize="small" color="success" />}
-            >
-              {renderTypedExerciseList(categories.doneToday)}
-            </CollapsibleSection>
-          )}
-
-          {/* Weekly complete */}
-          {categories.weeklyComplete.length > 0 && categories.weeklyComplete.length < requiredTemplate.length && (
+      {/* Physio Section – always visible */}
+      {physioTemplate.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <SelfImprovementIcon color="secondary" fontSize="small" />
+            <Typography variant="subtitle2" color="secondary.main" fontWeight={700}>
+              Physio
+            </Typography>
+            {allPhysioDoneWeek && (
+              <Chip label="✓ Wochenziel" size="small" color="success" />
+            )}
+          </Box>
+          {physio.todo.map(renderPhysioCard)}
+          {physio.done.length > 0 && (
             <CollapsibleSection
               title="Wochenziel erreicht"
-              count={categories.weeklyComplete.length}
+              count={physio.done.length}
               icon={<EmojiEventsIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
             >
-              {renderTypedExerciseList(categories.weeklyComplete)}
+              {physio.done.map(renderPhysioCard)}
             </CollapsibleSection>
           )}
-
-          {renderOptionalSection()}
-        </>
+        </Box>
       )}
 
-      {/* === SHOW ALL VIEW (legacy) === */}
-      {template.length > 0 && showAll && (
-        <>
-          {requiredTemplate.length > 0 && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                Pflichtübungen
-              </Typography>
-              {renderTypedExerciseList(requiredTemplate)}
-            </Box>
-          )}
-          {renderOptionalSection()}
-        </>
+      {/* Optional Exercises */}
+      {optionalTemplate.length > 0 && (
+        <CollapsibleSection
+          title="Optionale Übungen"
+          count={optionalTemplate.length}
+          defaultExpanded={false}
+        >
+          {optionalTemplate.map((t) => {
+            const exercise = exerciseMap.get(t.exerciseId);
+            if (!exercise) return null;
+            const weekCount = completions.filter((c) => c.exerciseId === t.exerciseId).length;
+            return (
+              <ExerciseCard
+                key={t.id}
+                exercise={exercise}
+                mode={exercise.type === 'kraft' ? 'kraft' : 'physio'}
+                doneToday={exercise.type === 'kraft' ? completions.some(
+                  (c) => c.exerciseId === t.exerciseId && getDateKey(new Date(c.completedAt)) === todayKey,
+                ) : undefined}
+                weekCount={exercise.type === 'physio' ? weekCount : undefined}
+                weekTarget={exercise.type === 'physio' ? t.targetCount : undefined}
+                onComplete={() => handleComplete(exercise)}
+              />
+            );
+          })}
+        </CollapsibleSection>
+      )}
+
+      {/* All done for the week */}
+      {allKraftDoneToday && allPhysioDoneWeek && isTrainingDay && (
+        <Card sx={{ p: 3, textAlign: 'center', mb: 2, border: '2px solid', borderColor: 'success.main' }}>
+          <Typography variant="h6" color="success.main" fontWeight={700}>
+            🏆 Alles erledigt!
+          </Typography>
+        </Card>
       )}
 
       {/* Cardio Entries */}
@@ -371,31 +360,30 @@ export default function Dashboard() {
       {completions.length > 0 && (
         <Box sx={{ mt: 3 }}>
           <Divider sx={{ mb: 2 }} />
-          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-            Erledigte Übungen diese Woche
-          </Typography>
-          {completions
-            .sort((a, b) => b.completedAt - a.completedAt)
-            .map((c) => {
-              const ex = exerciseMap.get(c.exerciseId);
-              return (
-                <Box key={c.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                  <Box>
-                    <Typography variant="body2">
-                      {ex?.name ?? 'Unbekannt'} – {c.kcal} kcal
-                      {c.weight ? ` (${c.weight} kg)` : ''}
-                      {c.band ? ` (${c.band})` : ''}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {new Date(c.completedAt).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </Typography>
+          <CollapsibleSection title="Erledigte Übungen diese Woche" count={completions.length}>
+            {completions
+              .sort((a, b) => b.completedAt - a.completedAt)
+              .map((c) => {
+                const ex = exerciseMap.get(c.exerciseId);
+                return (
+                  <Box key={c.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                    <Box>
+                      <Typography variant="body2">
+                        {ex?.name ?? 'Unbekannt'} – {c.kcal} kcal
+                        {c.weight ? ` (${c.weight} kg)` : ''}
+                        {c.band ? ` (${c.band})` : ''}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(c.completedAt).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </Typography>
+                    </Box>
+                    <IconButton size="small" onClick={() => removeCompletion(c.id)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
                   </Box>
-                  <IconButton size="small" onClick={() => removeCompletion(c.id)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              );
-            })}
+                );
+              })}
+          </CollapsibleSection>
         </Box>
       )}
 
